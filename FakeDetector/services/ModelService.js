@@ -1,5 +1,6 @@
 import * as tf from '@tensorflow/tfjs';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
+import { Asset } from 'expo-asset';
 
 class ModelService {
   constructor() {
@@ -43,7 +44,9 @@ class ModelService {
       console.log('Weights yükleniyor:', weightsPath);
       
       // Weights'i asset olarak yükle
-      const weightsResponse = await fetch(`file://${__dirname}/../assets/${weightsPath}`);
+      const weightsAsset = Asset.fromModule(require(`../assets/${weightsPath}`));
+      await weightsAsset.downloadAsync();
+      const weightsResponse = await fetch(weightsAsset.uri);
       if (!weightsResponse.ok) {
         throw new Error(`Weights fetch failed: ${weightsResponse.status}`);
       }
