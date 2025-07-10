@@ -105,8 +105,8 @@ class ModelService {
     }
     
     if (obj && typeof obj === 'object') {
-      // Data augmentation katmanlarını atla
-      if (obj.class_name === 'RandomFlip' || obj.class_name === 'RandomRotation' || obj.class_name === 'RandomZoom' || obj.class_name === 'RandomBrightness' || obj.class_name === 'RandomContrast') {
+      // TensorFlow.js'de desteklenmeyen katmanları atla
+      if (obj.class_name === 'RandomFlip' || obj.class_name === 'RandomRotation' || obj.class_name === 'RandomZoom' || obj.class_name === 'RandomBrightness' || obj.class_name === 'RandomContrast' || obj.class_name === 'TFOpLambda') {
         console.log(`${indent}🚫 ${obj.class_name} katmanı kaldırıldı`);
         return null;
       }
