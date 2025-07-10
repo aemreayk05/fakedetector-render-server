@@ -180,23 +180,30 @@ class ModelService {
     }
   }
 
-  base64ToTensor(base64String) {
+  async base64ToTensor(base64String) {
     try {
-      // Base64'ten deterministic pixel array oluştur
-      const imageSize = 224 * 224 * 3;
-      const pixelData = new Float32Array(imageSize);
+      // Base64'ten gerçek image tensor oluştur
+      const imageUri = `data:image/jpeg;base64,${base64String}`;
       
-      let seed = 0;
-      for (let i = 0; i < Math.min(base64String.length, 100); i++) {
-        seed += base64String.charCodeAt(i);
-      }
+      // Image'i yükle ve tensor'a çevir
+      const image = await tf.image.decodeImage(base64String, 3);
       
-      for (let i = 0; i < imageSize; i++) {
-        seed = (seed * 9301 + 49297) % 233280;
-        pixelData[i] = seed / 233280;
-      }
+      // Resize to 224x224
+      const resized = tf.image.resizeBilinear(image, [224, 224]);
       
-      return tf.tensor(pixelData, [1, 224, 224, 3]);
+      // Normalize to [0, 1]
+      const normalized = tf.div(resized, 255.0);
+      
+      // Add batch dimension
+      const batched = tf.expandDims(normalized, 0);
+      
+      // Cleanup intermediate tensors
+      image.dispose();
+      resized.dispose();
+      normalized.dispose();
+      
+      console.log('✅ Image tensor oluşturuldu, shape:', batched.shape);
+      return batched;
     } catch (error) {
       console.error('Base64 to tensor conversion failed:', error);
       throw error;
@@ -223,7 +230,7 @@ class ModelService {
       }
       
       console.log('Tensor oluşturuluyor...');
-      const inputTensor = this.base64ToTensor(processedImage.base64);
+      const inputTensor = await this.base64ToTensor(processedImage.base64);
       
       console.log('Model prediction başlıyor...');
       const prediction = this.model.predict(inputTensor);
