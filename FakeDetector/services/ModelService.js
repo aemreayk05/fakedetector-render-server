@@ -44,7 +44,7 @@ class ModelService {
       console.log('Weights yükleniyor:', weightsPath);
       
       // Weights'i asset olarak yükle
-      const weightsAsset = Asset.fromModule(require(`../assets/${weightsPath}`));
+      const weightsAsset = Asset.fromModule(require('../assets/group1-shard1of1.bin'));
       await weightsAsset.downloadAsync();
       const weightsResponse = await fetch(weightsAsset.uri);
       if (!weightsResponse.ok) {
