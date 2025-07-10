@@ -35,7 +35,7 @@ class ModelService {
       console.log('Yerel model yükleniyor...');
       
       // Yerel model dosyalarını yükle
-      const modelJson = require('../model.json');
+      const modelJson = require('../assets/model.json');
       console.log('Model JSON yüklendi');
       
       // Weights dosyasını yükle
@@ -43,7 +43,7 @@ class ModelService {
       console.log('Weights yükleniyor:', weightsPath);
       
       // Weights'i asset olarak yükle
-      const weightsResponse = await fetch(weightsPath);
+      const weightsResponse = await fetch(`file://${__dirname}/../assets/${weightsPath}`);
       if (!weightsResponse.ok) {
         throw new Error(`Weights fetch failed: ${weightsResponse.status}`);
       }
