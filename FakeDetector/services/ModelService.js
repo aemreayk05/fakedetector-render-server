@@ -32,41 +32,28 @@ class ModelService {
         throw new Error('TensorFlow.js initialization failed');
       }
       
-      const modelUrl = 'https://raw.githubusercontent.com/Busthird/FakeDetector/master/tfjs_model/model.json';
-      console.log('Model yükleniyor:', modelUrl);
+      console.log('Yerel model yükleniyor...');
       
-      // Model JSON ve weights'i ayrı ayrı yükle
-      const modelResponse = await fetch(modelUrl);
-      if (!modelResponse.ok) {
-        throw new Error(`Model JSON fetch failed: ${modelResponse.status}`);
-      }
-      const modelJson = await modelResponse.json();
+      // Yerel model dosyalarını yükle
+      const modelJson = require('../model.json');
+      console.log('Model JSON yüklendi');
       
-      console.log('Model JSON yüklendi, weights yükleniyor...');
-      console.log('Model topology analiz ediliyor...');
-      
-      // Weights URL'ini oluştur
-      const baseUrl = modelUrl.substring(0, modelUrl.lastIndexOf('/'));
+      // Weights dosyasını yükle
       const weightsPath = modelJson.weightsManifest[0].paths[0];
-      const weightsUrl = `${baseUrl}/${weightsPath}`;
+      console.log('Weights yükleniyor:', weightsPath);
       
-      console.log('Weights yükleniyor:', weightsUrl);
-      
-      // Weights'i fetch et
-      const weightsResponse = await fetch(weightsUrl);
+      // Weights'i asset olarak yükle
+      const weightsResponse = await fetch(weightsPath);
       if (!weightsResponse.ok) {
         throw new Error(`Weights fetch failed: ${weightsResponse.status}`);
       }
       const weightsData = await weightsResponse.arrayBuffer();
       
-      console.log('Model JSON ve weights yüklendi, input shape düzeltiliyor...');
-      
-      // Model topology'sini detaylı analiz et ve düzelt
-      const fixedTopology = this.fixAllInputShapes(modelJson.modelTopology);
+      console.log('Model JSON ve weights yüklendi');
       
       // Model artifacts'i oluştur
       const modelArtifacts = {
-        modelTopology: fixedTopology,
+        modelTopology: modelJson.modelTopology,
         weightSpecs: modelJson.weightsManifest[0].weights,
         weightData: weightsData,
         format: modelJson.format,
@@ -96,74 +83,7 @@ class ModelService {
     }
   }
   
-  // Tüm input shape'leri düzelt ve RandomFlip katmanlarını kaldır (recursive)
-  fixAllInputShapes(obj, depth = 0) {
-    const indent = '  '.repeat(depth);
-    
-    if (Array.isArray(obj)) {
-      return obj.map(item => this.fixAllInputShapes(item, depth)).filter(item => item !== null);
-    }
-    
-    if (obj && typeof obj === 'object') {
-      // TensorFlow.js'de desteklenmeyen katmanları atla
-      if (obj.class_name === 'RandomFlip' || obj.class_name === 'RandomRotation' || obj.class_name === 'RandomZoom' || obj.class_name === 'RandomBrightness' || obj.class_name === 'RandomContrast' || obj.class_name === 'TFOpLambda') {
-        console.log(`${indent}🚫 ${obj.class_name} katmanı kaldırıldı`);
-        return null;
-      }
-      
-      const result = {};
-      
-      for (const [key, value] of Object.entries(obj)) {
-        if (key === 'class_name' && value === 'InputLayer') {
-          console.log(`${indent}🔍 InputLayer bulundu, config inceleniyor...`);
-          
-          // Bu bir InputLayer - config'ini düzelt
-          result[key] = value;
-          result['config'] = this.fixInputLayerConfig(obj.config, depth + 1);
-        } else if (key === 'layers' && Array.isArray(value)) {
-          // Layers array'ini filtrele - RandomFlip katmanlarını kaldır
-          result[key] = value.map(layer => this.fixAllInputShapes(layer, depth)).filter(layer => layer !== null);
-        } else {
-          result[key] = this.fixAllInputShapes(value, depth);
-        }
-      }
-      
-      return result;
-    }
-    
-    return obj;
-  }
-  
-  // InputLayer config'ini düzelt
-  fixInputLayerConfig(config, depth) {
-    const indent = '  '.repeat(depth);
-    const fixedConfig = { ...config };
-    
-    console.log(`${indent}📝 Config before fix:`, {
-      batch_shape: config.batch_shape,
-      batch_input_shape: config.batch_input_shape,
-      input_shape: config.input_shape
-    });
-    
-    // Her durumda doğru input shape'leri ayarla
-    fixedConfig.batch_input_shape = [null, 224, 224, 3];
-    fixedConfig.input_shape = [224, 224, 3];
-    
-    // batch_shape'i de güncelle
-    if (fixedConfig.batch_shape) {
-      fixedConfig.batch_shape = [null, 224, 224, 3];
-    }
-    
-    console.log(`${indent}✅ Input shape düzeltildi: batch_input_shape=[null, 224, 224, 3], input_shape=[224, 224, 3]`);
-    
-    console.log(`${indent}📝 Config after fix:`, {
-      batch_shape: fixedConfig.batch_shape,
-      batch_input_shape: fixedConfig.batch_input_shape,
-      input_shape: fixedConfig.input_shape
-    });
-    
-    return fixedConfig;
-  }
+  // Yeni model TensorFlow.js ile uyumlu olduğu için düzeltme gerekmiyor
 
   async preprocessImage(imageUri) {
     try {
@@ -256,7 +176,7 @@ class ModelService {
         },
         rawScore: rawScore,
         timestamp: new Date().toISOString(),
-        modelUsed: 'MobileNetV3Small - GitHub (Deep Fixed)'
+        modelUsed: 'Yerel Basit Model'
       };
     } catch (error) {
       console.error('❌ Prediction failed:', error);
@@ -285,7 +205,7 @@ class ModelService {
       isLoaded: this.isModelLoaded,
       inputShape: this.model.inputs[0].shape,
       outputShape: this.model.outputs[0].shape,
-      mode: 'Real TensorFlow.js Model (Deep Input Shape Fix)'
+      mode: 'Yerel Basit Model'
     };
   }
 
