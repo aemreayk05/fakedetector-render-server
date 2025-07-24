@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import torch
-from transformers import AutoImageProcessor, AutoModelForImageClassification
+from transformers import pipeline
 from PIL import Image
 import io
 import base64
@@ -20,9 +20,8 @@ def load_model():
     global model, processor
     try:
         print("🔄 Model yükleniyor...")
-        # Daha basit model yükleme
-        from transformers import pipeline
-        model = pipeline("image-classification", model="haywoodsloan/ai-image-detector-deploy")
+        # Basit pipeline kullanımı - tokenizers gerektirmez
+        model = pipeline("image-classification", model="haywoodsloan/ai-image-detector-deploy", device=-1)
         processor = None  # Pipeline kendi processor'ını kullanır
         print("✅ Model başarıyla yüklendi!")
         return True
