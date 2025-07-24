@@ -1,11 +1,8 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { Platform } from 'react-native';
-
-// TensorFlow.js Web import
-import * as tf from '@tensorflow/tfjs';
 
 // React Native için fetch polyfill
 global.fetch = fetch;
@@ -21,19 +18,6 @@ import SettingsScreen from './screens/SettingsScreen';
 const Tab = createBottomTabNavigator();
 
 export default function App() {
-  useEffect(() => {
-    // TensorFlow.js Web initializasyon
-    const initTensorFlow = async () => {
-      try {
-        await tf.ready();
-        console.log('TensorFlow.js Web initialized');
-      } catch (error) {
-        console.error('TensorFlow.js initialization failed:', error);
-      }
-    };
-
-    initTensorFlow();
-  }, []);
 
   return (
     <NavigationContainer>

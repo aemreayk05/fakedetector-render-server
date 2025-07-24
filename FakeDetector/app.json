@@ -2,7 +2,7 @@
   "expo": {
     "name": "FakeDetector",
     "slug": "FakeDetector",
-    "version": "1.0.0",
+    "version": "2.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -20,6 +20,7 @@
       }
     },
     "android": {
+      "package": "com.anonymous.fakedetector",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
@@ -28,7 +29,8 @@
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.READ_EXTERNAL_STORAGE",
-        "android.permission.WRITE_EXTERNAL_STORAGE"
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "web": {
@@ -43,6 +45,11 @@
           "cameraPermission": "Bu uygulama fotoğraf çekmek için kameraya erişim gerektirir."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "c765b704-c2db-4c34-b8a8-03dec277e012"
+      }
+    }
   }
 }

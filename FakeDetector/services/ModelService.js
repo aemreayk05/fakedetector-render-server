@@ -1,225 +1,275 @@
-import * as tf from '@tensorflow/tfjs';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
-import { Asset } from 'expo-asset';
+import SightengineService from './SightengineService.js';
+
+// ========================================
+// 🔥 DUAL MODEL SERVICE
+// Sightengine API + Haywoodsloan Server
+// ========================================
+
+// Analiz modları
+const ANALYSIS_MODES = {
+  SIGHTENGINE: 'sightengine',
+  HAYWOODSLOAN: 'haywoodsloan'
+};
 
 class ModelService {
   constructor() {
-    this.model = null;
-    this.isModelLoaded = false;
-    this.isLoading = false;
-  }
-
-  async initializeTensorFlow() {
-    try {
-      // React Native için platform ayarları
-      await tf.ready();
-      console.log('TensorFlow.js platform:', tf.getBackend());
-      return true;
-    } catch (error) {
-      console.error('TensorFlow.js initialization failed:', error);
-      return false;
-    }
-  }
-
-  async loadModel() {
-    if (this.isModelLoaded || this.isLoading) {
-      return this.isModelLoaded;
-    }
-    this.isLoading = true;
+    console.log('🚀 ModelService başlatılıyor - Dual Model Ready');
+    this.sightengineService = SightengineService;
+    this.currentMode = ANALYSIS_MODES.SIGHTENGINE; // Varsayılan
+    this.haywoodsloanServerUrl = null;
     
-    try {
-      const tfReady = await this.initializeTensorFlow();
-      if (!tfReady) {
-        throw new Error('TensorFlow.js initialization failed');
-      }
-      
-      console.log('Yerel model yükleniyor...');
-      
-      // Yerel model dosyalarını yükle
-      const modelJson = require('../assets/model.json');
-      console.log('Model JSON yüklendi');
-      
-      // Weights dosyasını yükle
-      const weightsPath = modelJson.weightsManifest[0].paths[0];
-      console.log('Weights yükleniyor:', weightsPath);
-      
-      // Weights'i asset olarak yükle
-      const weightsAsset = Asset.fromModule(require('../assets/group1-shard1of1.bin'));
-      await weightsAsset.downloadAsync();
-      const weightsResponse = await fetch(weightsAsset.uri);
-      if (!weightsResponse.ok) {
-        throw new Error(`Weights fetch failed: ${weightsResponse.status}`);
-      }
-      const weightsData = await weightsResponse.arrayBuffer();
-      
-      console.log('Model JSON ve weights yüklendi');
-      
-      // Model artifacts'i oluştur
-      const modelArtifacts = {
-        modelTopology: modelJson.modelTopology,
-        weightSpecs: modelJson.weightsManifest[0].weights,
-        weightData: weightsData,
-        format: modelJson.format,
-        generatedBy: modelJson.generatedBy,
-        convertedBy: modelJson.convertedBy
-      };
-      
-      console.log('TensorFlow.js model oluşturuluyor...');
-      
-      // Model'i TensorFlow.js ile yükle
-      this.model = await tf.loadLayersModel(tf.io.fromMemory(modelArtifacts));
-      
-      console.log('✅ Model başarıyla yüklendi!');
-      console.log('Model input shape:', this.model.inputs[0].shape);
-      console.log('Model output shape:', this.model.outputs[0].shape);
-      
-      this.isModelLoaded = true;
-      return true;
-      
-    } catch (error) {
-      console.error('❌ Model yükleme hatası:', error);
-      this.isModelLoaded = false;
-      this.model = null;
-      throw error;
-    } finally {
-      this.isLoading = false;
-    }
-  }
-  
-  // Yeni model TensorFlow.js ile uyumlu olduğu için düzeltme gerekmiyor
-
-  async preprocessImage(imageUri) {
-    try {
-      const manipulatedImage = await manipulateAsync(
-        imageUri,
-        [{ resize: { width: 224, height: 224 } }],
-        { format: SaveFormat.JPEG, compress: 0.8, base64: true }
-      );
-      
-      return manipulatedImage;
-    } catch (error) {
-      console.error('Image preprocessing failed:', error);
-      throw error;
-    }
+    // Render sunucu URL'si (deploy tamamlandıktan sonra güncellenecek)
+    this.RENDER_SERVER_URL = "https://fakedetector-haywoodsloan.onrender.com";
   }
 
-  async base64ToTensor(base64String) {
-    try {
-      // Base64'ten gerçek image tensor oluştur
-      const imageUri = `data:image/jpeg;base64,${base64String}`;
-      
-      // Image'i yükle ve tensor'a çevir
-      const image = await tf.image.decodeImage(base64String, 3);
-      
-      // Resize to 224x224
-      const resized = tf.image.resizeBilinear(image, [224, 224]);
-      
-      // Normalize to [0, 1]
-      const normalized = tf.div(resized, 255.0);
-      
-      // Add batch dimension
-      const batched = tf.expandDims(normalized, 0);
-      
-      // Cleanup intermediate tensors
-      image.dispose();
-      resized.dispose();
-      normalized.dispose();
-      
-      console.log('✅ Image tensor oluşturuldu, shape:', batched.shape);
-      return batched;
-    } catch (error) {
-      console.error('Base64 to tensor conversion failed:', error);
-      throw error;
-    }
-  }
-
-  async predict(imageUri) {
-    try {
-      // Model yüklü değilse yükle
-      if (!this.isModelLoaded) {
-        console.log('Model yükleniyor...');
-        await this.loadModel();
-      }
-      
-      if (!this.model) {
-        throw new Error('Model yüklenemedi');
-      }
-      
-      console.log('Image preprocessing başlıyor...');
-      const processedImage = await this.preprocessImage(imageUri);
-      
-      if (!processedImage.base64) {
-        throw new Error('Image preprocessing başarısız');
-      }
-      
-      console.log('Tensor oluşturuluyor...');
-      const inputTensor = await this.base64ToTensor(processedImage.base64);
-      
-      console.log('Model prediction başlıyor...');
-      const prediction = this.model.predict(inputTensor);
-      const predictionData = await prediction.data();
-      
-      // Bellek temizliği
-      inputTensor.dispose();
-      prediction.dispose();
-      
-      // Sonucu yorumla
-      const rawScore = predictionData[0];
-      const confidence = Math.round(rawScore * 100);
-      const isReal = rawScore > 0.5;
-      
-      console.log(`✅ Prediction tamamlandı! Raw score: ${rawScore}, Confidence: ${confidence}%, Prediction: ${isReal ? 'Gerçek' : 'Sahte'}`);
-      
-      return {
-        prediction: isReal ? 'Gerçek' : 'Sahte',
-        confidence: isReal ? confidence : 100 - confidence,
-        probabilities: {
-          real: isReal ? confidence : 100 - confidence,
-          fake: isReal ? 100 - confidence : confidence,
-        },
-        rawScore: rawScore,
-        timestamp: new Date().toISOString(),
-        modelUsed: 'Yerel Basit Model'
-      };
-    } catch (error) {
-      console.error('❌ Prediction failed:', error);
-      throw error;
-    }
-  }
-
+  // ===== MAIN ANALYSIS METHOD =====
   async analyzeImage(imageUri) {
     try {
-      console.log('🔍 Image analysis başlıyor...');
-      const result = await this.predict(imageUri);
-      console.log('✅ Analysis tamamlandı:', result);
-      return result;
+      console.log(`🔍 ${this.currentMode.toUpperCase()} ile görsel analizi başlıyor...`);
+      const startTime = Date.now();
+
+      // 1. Görseli işle (resize yok, %100 kalite)
+      const base64Image = await this.preprocessImage(imageUri);
+
+      // 2. Seçili mode'a göre analiz yap
+      let result;
+      if (this.currentMode === ANALYSIS_MODES.SIGHTENGINE) {
+        result = await this.analyzeWithSightengine(base64Image);
+      } else if (this.currentMode === ANALYSIS_MODES.HAYWOODSLOAN) {
+        result = await this.analyzeWithHaywoodsloan(base64Image);
+      } else {
+        throw new Error('Geçersiz analiz modu');
+      }
+
+      // 3. Sonucu formatla
+      const totalTime = Date.now() - startTime;
+      const formattedResult = {
+        ...result,
+        analysisMode: this.currentMode,
+        totalProcessingTime: totalTime,
+        timestamp: Date.now()
+      };
+
+      console.log('✅ Analiz tamamlandı:', formattedResult.prediction, `(${formattedResult.confidence}%)`);
+      return formattedResult;
+
     } catch (error) {
-      console.error('❌ Image analysis failed:', error.message);
-      throw error;
+      console.error('❌ Analiz hatası:', error);
+      throw new Error(`Analiz başarısız: ${error.message}`);
     }
   }
 
-  getModelInfo() {
-    if (!this.model) {
-      return { isLoaded: false, error: 'Model yüklü değil' };
+  // ===== SIGHTENGINE ANALYSIS =====
+  async analyzeWithSightengine(base64Image) {
+    console.log('🔥 Sightengine API analizi başlıyor...');
+    const result = await this.sightengineService.analyzeImage(base64Image);
+    
+    // Doğru confidence değerini hesapla
+    let correctConfidence = result.confidence;
+    
+    // Eğer prediction "Gerçek" ise, gerçek olma oranını al
+    if (result.prediction === 'Gerçek' && result.probabilities) {
+      correctConfidence = result.probabilities.real;
+    }
+    // Eğer prediction "Sahte" ise, sahte olma oranını al
+    else if (result.prediction === 'Sahte' && result.probabilities) {
+      correctConfidence = result.probabilities.fake;
     }
     
     return {
-      isLoaded: this.isModelLoaded,
-      inputShape: this.model.inputs[0].shape,
-      outputShape: this.model.outputs[0].shape,
-      mode: 'Yerel Basit Model'
+      ...result,
+      confidence: correctConfidence
     };
   }
 
-  dispose() {
-    if (this.model) {
-      this.model.dispose();
-      this.model = null;
-      this.isModelLoaded = false;
+  // ===== HAYWOODSLOAN ANALYSIS =====
+  async analyzeWithHaywoodsloan(base64Image) {
+    console.log('🤖 Haywoodsloan Server analizi başlıyor...');
+    
+    // Render sunucu URL'sini kullan (kullanıcı ayarlamadıysa)
+    const serverUrl = this.haywoodsloanServerUrl || this.RENDER_SERVER_URL;
+    
+    if (!serverUrl) {
+      throw new Error('Haywoodsloan server URL ayarlanmamış');
     }
+
+    try {
+      const response = await fetch(`${serverUrl}/analyze`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          image: base64Image
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Server hatası: ${response.status}`);
+      }
+
+      const result = await response.json();
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Server analiz hatası');
+      }
+
+      // Doğru confidence değerini hesapla
+      let correctConfidence = result.confidence;
+      
+      // Eğer prediction "Gerçek" ise, gerçek olma oranını al
+      if ((result.prediction === 'Gerçek' || result.prediction === 'Gercek') && result.probabilities) {
+        correctConfidence = result.probabilities.real;
+      }
+      // Eğer prediction "Sahte" ise, sahte olma oranını al
+      else if (result.prediction === 'Sahte' && result.probabilities) {
+        correctConfidence = result.probabilities.fake;
+      }
+
+      // Haywoodsloan sonucunu formatla
+      return {
+        success: true,
+        prediction: result.prediction,
+        prediction_en: result.prediction_en,
+        confidence: correctConfidence,
+        raw_score: result.raw_score,
+        processing_time: result.processing_time,
+        model_used: result.model_used,
+        model_author: result.model_author,
+        probabilities: result.probabilities,
+        model_info: result.model_info
+      };
+
+    } catch (error) {
+      console.error('❌ Haywoodsloan server hatası:', error);
+      throw new Error(`Haywoodsloan analizi başarısız: ${error.message}`);
+    }
+  }
+
+  // ===== IMAGE PREPROCESSING =====
+  async preprocessImage(imageUri) {
+    try {
+      console.log('📸 Görsel işleniyor - Orijinal kalite korunuyor...');
+      
+      // Sightengine için: Resize YOK, compress YOK, %100 kalite
+      const manipulatedImage = await manipulateAsync(
+        imageUri,
+        [], // Resize yok - orijinal boyut
+        { 
+          format: SaveFormat.JPEG, 
+          compress: 1.0,  // %100 kalite
+          base64: true 
+        }
+      );
+
+      console.log('✅ Görsel işleme tamamlandı:', {
+        width: manipulatedImage.width,
+        height: manipulatedImage.height,
+        base64Length: manipulatedImage.base64?.length || 0
+      });
+      
+      return manipulatedImage.base64;
+    } catch (error) {
+      console.error('❌ Görsel işleme hatası:', error);
+      throw new Error('Görsel işlenemedi');
+    }
+  }
+
+  // ===== HEALTH & STATUS =====
+  async checkHealth() {
+    if (this.currentMode === ANALYSIS_MODES.SIGHTENGINE) {
+      return await this.sightengineService.checkHealth();
+    } else if (this.currentMode === ANALYSIS_MODES.HAYWOODSLOAN) {
+      return await this.checkHaywoodsloanHealth();
+    }
+    return { status: 'unknown', mode: this.currentMode };
+  }
+
+  async checkHaywoodsloanHealth() {
+    const serverUrl = this.haywoodsloanServerUrl || this.RENDER_SERVER_URL;
+    
+    if (!serverUrl) {
+      return { status: 'error', error: 'Server URL ayarlanmamış' };
+    }
+
+    try {
+      const response = await fetch(`${serverUrl}/health`);
+      if (response.ok) {
+        const data = await response.json();
+        return { 
+          status: 'healthy', 
+          mode: 'haywoodsloan',
+          model: data.model_name,
+          device: data.device || 'unknown'
+        };
+      } else {
+        return { status: 'error', error: `Server hatası: ${response.status}` };
+      }
+    } catch (error) {
+      return { status: 'error', error: error.message };
+    }
+  }
+
+  async getModelInfo() {
+    if (this.currentMode === ANALYSIS_MODES.SIGHTENGINE) {
+      return {
+        ...this.sightengineService.getUsageInfo(),
+        mode: 'Sightengine API',
+        status: 'ready',
+        note: 'Production-ready AI detection'
+      };
+    } else if (this.currentMode === ANALYSIS_MODES.HAYWOODSLOAN) {
+      return {
+        mode: 'Haywoodsloan Server',
+        status: this.haywoodsloanServerUrl ? 'ready' : 'not_configured',
+        model: 'haywoodsloan/ai-image-detector-deploy',
+        type: 'SwinV2 (Swin Transformer V2)',
+        size: '781 MB',
+        note: 'Open-source AI detection model'
+      };
+    }
+  }
+
+  // ===== MODE MANAGEMENT =====
+  getCurrentMode() {
+    return this.currentMode;
+  }
+
+  getModeDescription() {
+    if (this.currentMode === ANALYSIS_MODES.SIGHTENGINE) {
+      return 'Sightengine Professional API - Yüksek doğruluk, ticari kullanım';
+    } else if (this.currentMode === ANALYSIS_MODES.HAYWOODSLOAN) {
+      return 'Haywoodsloan SwinV2 Model - Open-source, güçlü AI detection';
+    }
+    return 'Bilinmeyen mod';
+  }
+
+  setAnalysisMode(mode) {
+    if (mode === ANALYSIS_MODES.SIGHTENGINE || mode === ANALYSIS_MODES.HAYWOODSLOAN) {
+      this.currentMode = mode;
+      console.log(`✅ Analiz modu değiştirildi: ${mode}`);
+      return true;
+    }
+    console.log('❌ Geçersiz analiz modu:', mode);
+    return false;
+  }
+
+  setHaywoodsloanServerUrl(url) {
+    this.haywoodsloanServerUrl = url;
+    console.log(`✅ Haywoodsloan server URL ayarlandı: ${url}`);
+  }
+  
+  setDemoMode(enabled) { 
+    console.log('⚠️ Demo mode devre dışı - sadece Sightengine kullanılıyor'); 
+  }
+  
+  async getServicesStatus() {
+    return {
+      sightengine: { available: true, status: 'ready' },
+      current_mode: 'sightengine'
+    };
   }
 }
 
-const modelService = new ModelService();
-export default modelService; 
+export default new ModelService(); 

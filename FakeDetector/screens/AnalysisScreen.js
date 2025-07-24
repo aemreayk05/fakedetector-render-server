@@ -1,243 +1,255 @@
+// AnalysisScreen: Kullanıcıdan bir görsel seçmesini veya fotoğraf çekmesini sağlar, ardından bu görseli analiz eder ve sonucu gösterir.
+
+// React ve React Native bileşenlerini içe aktarma
 import React, { useState, useEffect } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  Image,
-  Alert,
-  ScrollView,
-  SafeAreaView,
-  Dimensions,
-  Animated,
+  View,           // Temel container bileşeni
+  Text,           // Metin gösterme bileşeni
+  StyleSheet,     // Stil tanımlama
+  TouchableOpacity, // Dokunulabilir buton bileşeni
+  Image,          // Görsel gösterme bileşeni
+  Alert,          // Uyarı popup'ları için
+  ScrollView,     // Kaydırılabilir alan
+  SafeAreaView,   // Güvenli alan (notch vs. için)
+  Dimensions,     // Ekran boyutları
+  Animated,       // Animasyon bileşeni
 } from 'react-native';
-import * as ImagePicker from 'expo-image-picker';
-import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+
+// Expo kütüphanelerini içe aktarma
+import * as ImagePicker from 'expo-image-picker';  // Galeri ve kamera erişimi
+import { Ionicons } from '@expo/vector-icons';     // İkon seti
+import { LinearGradient } from 'expo-linear-gradient'; // Gradyan arka plan
+
+// Özel servis dosyası - AI model analizi için
 import ModelService from '../services/ModelService';
 
+// Ekran boyutlarını al (responsive tasarım için)
 const { width, height } = Dimensions.get('window');
 
+// Ana bileşen fonksiyonu
 export default function AnalysisScreen() {
-  const [selectedImage, setSelectedImage] = useState(null);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [analysisResult, setAnalysisResult] = useState(null);
-  const [fadeAnim] = useState(new Animated.Value(0));
-  const [scaleAnim] = useState(new Animated.Value(0.8));
+  // State tanımlamaları - Bileşenin durumunu yönetir
+  const [selectedImage, setSelectedImage] = useState(null);     // Seçilen görselin bilgisi
+  const [isAnalyzing, setIsAnalyzing] = useState(false);        // Analiz işlemi devam ediyor mu?
+  const [analysisResult, setAnalysisResult] = useState(null);   // Analiz sonucu verisi
+  const [isAnalyzed, setIsAnalyzed] = useState(false);          // Görsel analiz edildi mi?
+  const [fadeAnim] = useState(new Animated.Value(0));          // Soluklaşma animasyonu için
+  const [scaleAnim] = useState(new Animated.Value(0.8));       // Büyütme animasyonu için
 
+  // useEffect: Bileşen ilk yüklendiğinde çalışır
   useEffect(() => {
-    // Initial animation
+    // Ekran açılış animasyonları - paralel olarak çalışır
     Animated.parallel([
+      // Soluklaşma animasyonu (0'dan 1'e)
       Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 800,
-        useNativeDriver: true,
+        toValue: 1,           // Hedef değer
+        duration: 800,        // Süre (ms)
+        useNativeDriver: true, // Performans için native driver kullan
       }),
+      // Ölçekleme animasyonu (0.8'den 1'e)
       Animated.timing(scaleAnim, {
         toValue: 1,
         duration: 800,
         useNativeDriver: true,
       }),
-    ]).start();
-  }, []);
+    ]).start(); // Animasyonları başlat
+  }, []); // Boş dependency array = sadece ilk render'da çalış
 
+  // Galeriden görsel seçme fonksiyonu
   const pickImageFromGallery = async () => {
     try {
-      // İzin kontrolü
+      // Galeri erişim izni kontrolü
       const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
       
+      // İzin verilmemişse uyarı göster ve çık
       if (permissionResult.granted === false) {
         Alert.alert(
-          'İzin Gerekli', 
-          'Galeriye erişim için izin vermeniz gerekiyor.',
-          [{ text: 'Tamam' }]
+          'İzin Gerekli',                                    // Başlık
+          'Galeriye erişim için izin vermeniz gerekiyor.',   // Mesaj
+          [{ text: 'Tamam' }]                               // Butonlar
         );
         return;
       }
 
       // Galeri açma - en basit konfigürasyon
       const result = await ImagePicker.launchImageLibraryAsync({
-        quality: 1,
+        quality: 1, // En yüksek kalite
       });
 
+      // Sonuç kontrolü - eski ImagePicker formatı için
       if (!result.cancelled && result.uri) {
-        // Eski format için
-        setSelectedImage({ uri: result.uri });
-        setAnalysisResult(null);
-      } else if (!result.canceled && result.assets && result.assets.length > 0) {
-        // Yeni format için
-        setSelectedImage(result.assets[0]);
-        setAnalysisResult(null);
+        setSelectedImage({ uri: result.uri }); // Seçilen görseli state'e kaydet
+        setAnalysisResult(null);                // Önceki analiz sonucunu temizle
+        setIsAnalyzed(false);                   // Yeni görsel seçildi, analiz edilmedi
+      } 
+      // Yeni ImagePicker formatı için (assets array)
+      else if (!result.canceled && result.assets && result.assets.length > 0) {
+        setSelectedImage(result.assets[0]);     // İlk asset'i al
+        setAnalysisResult(null);                // Önceki analiz sonucunu temizle
+        setIsAnalyzed(false);                   // Yeni görsel seçildi, analiz edilmedi
       }
     } catch (error) {
+      // Hata durumunda kullanıcıya bilgi ver
       Alert.alert('Hata', 'Galeri açılırken bir hata oluştu.');
     }
   };
 
-  const takePhoto = async () => {
-    try {
-      // İzin kontrolü
-      const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
-      
-      if (permissionResult.granted === false) {
-        Alert.alert(
-          'İzin Gerekli', 
-          'Kameraya erişim için izin vermeniz gerekiyor.',
-          [{ text: 'Tamam' }]
-        );
-        return;
-      }
 
-      // Kamera açma - en basit konfigürasyon
-      const result = await ImagePicker.launchCameraAsync({
-        quality: 1,
-      });
 
-      if (!result.cancelled && result.uri) {
-        // Eski format için
-        setSelectedImage({ uri: result.uri });
-        setAnalysisResult(null);
-      } else if (!result.canceled && result.assets && result.assets.length > 0) {
-        // Yeni format için
-        setSelectedImage(result.assets[0]);
-        setAnalysisResult(null);
-      }
-    } catch (error) {
-      Alert.alert('Hata', 'Kamera açılırken bir hata oluştu.');
-    }
-  };
-
+  // Seçilen görseli analiz etme fonksiyonu
   const analyzeImage = async () => {
+    // Görsel seçilmemişse uyarı ver
     if (!selectedImage) {
       Alert.alert('Hata', 'Lütfen önce bir görsel seçin.');
       return;
     }
 
+    // Analiz durumunu true yap (loading göstergesi için)
     setIsAnalyzing(true);
     
     try {
+      // ModelService ile görseli analiz et
       const result = await ModelService.analyzeImage(selectedImage.uri);
-      setAnalysisResult(result);
+      setAnalysisResult(result); // Sonucu state'e kaydet
+      setIsAnalyzed(true);       // Analiz tamamlandı
     } catch (error) {
+      // Hata durumunda kullanıcıya bilgi ver
       Alert.alert('Hata', 'Görsel analizi sırasında bir hata oluştu.');
-      console.error(error);
+      console.error(error); // Geliştirici için konsola log
     } finally {
+      // Her durumda analiz durumunu false yap
       setIsAnalyzing(false);
     }
   };
 
+  // UI render fonksiyonu
   return (
+    // Ana container - gradyan arka plan
     <LinearGradient
-      colors={['#667eea', '#764ba2']}
+      colors={['#667eea', '#764ba2']} // Mavi-mor gradyan
       style={styles.container}
     >
+      {/* Güvenli alan wrapper */}
       <SafeAreaView style={styles.safeArea}>
+        {/* Kaydırılabilir içerik alanı */}
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          
+          {/* Başlık bölümü - animasyonlu */}
           <Animated.View style={[styles.header, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}>
             <Text style={styles.title}>Görsel Analizi</Text>
             <Text style={styles.subtitle}>Görselin gerçeklik durumunu analiz edin</Text>
           </Animated.View>
           
+          {/* Görsel gösterme bölümü */}
           <View style={styles.imageSection}>
             {selectedImage ? (
+              // Görsel seçilmişse göster
               <Animated.View style={[styles.imageWrapper, { opacity: fadeAnim }]}>
                 <Image source={{ uri: selectedImage.uri }} style={styles.selectedImage} />
-                <View style={styles.imageOverlay} />
+                <View style={styles.imageOverlay} /> {/* Görsel üzerine hafif overlay */}
               </Animated.View>
             ) : (
+              // Görsel seçilmemişse placeholder göster
               <View style={styles.placeholderContainer}>
                 <LinearGradient
                   colors={['#f8f9fa', '#e9ecef']}
                   style={styles.placeholderGradient}
                 >
                   <Ionicons name="image-outline" size={60} color="#6c757d" />
-                  <Text style={styles.placeholderText}>Görsel seçin veya çekin</Text>
+                  <Text style={styles.placeholderText}>Görsel seçin</Text>
                   <Text style={styles.placeholderSubtext}>Analiz için bir görsel yükleyin</Text>
                 </LinearGradient>
               </View>
             )}
           </View>
 
-          <View style={styles.buttonSection}>
-            <TouchableOpacity style={styles.actionButton} onPress={pickImageFromGallery}>
-              <LinearGradient
-                colors={['#667eea', '#764ba2']}
-                style={styles.buttonGradient}
-              >
-                <Ionicons name="images-outline" size={24} color="white" />
-                <Text style={styles.buttonText}>Galeriden Seç</Text>
-              </LinearGradient>
-            </TouchableOpacity>
+          {/* Galeriden seç butonu - geniş tasarım */}
+          <TouchableOpacity style={styles.wideActionButton} onPress={pickImageFromGallery}>
+            <LinearGradient
+              colors={['#4facfe', '#00f2fe']}
+              style={styles.wideButtonGradient}
+            >
+              <Ionicons name="images-outline" size={24} color="white" />
+              <Text style={styles.wideButtonText}>Galeriden Seç</Text>
+            </LinearGradient>
+          </TouchableOpacity>
 
-            <TouchableOpacity style={styles.actionButton} onPress={takePhoto}>
-              <LinearGradient
-                colors={['#f093fb', '#f5576c']}
-                style={styles.buttonGradient}
-              >
-                <Ionicons name="camera-outline" size={24} color="white" />
-                <Text style={styles.buttonText}>Fotoğraf Çek</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-          </View>
-
+          {/* Analiz butonu - sadece görsel seçilmişse göster */}
           {selectedImage && (
             <TouchableOpacity
-              style={[styles.analyzeButton, isAnalyzing && styles.analyzeButtonDisabled]}
+              style={[styles.wideAnalyzeButton, (isAnalyzing || isAnalyzed) && styles.analyzeButtonDisabled]}
               onPress={analyzeImage}
-              disabled={isAnalyzing}
+              disabled={isAnalyzing || isAnalyzed} // Analiz sırasında veya tamamlandığında disable et
             >
               <LinearGradient
-                colors={isAnalyzing ? ['#adb5bd', '#6c757d'] : ['#4facfe', '#00f2fe']}
-                style={styles.analyzeGradient}
+                colors={isAnalyzing ? ['#adb5bd', '#6c757d'] : ['#28a745', '#20c997']}
+                style={styles.wideAnalyzeGradient}
               >
+                {/* Loading spinner - sadece analiz sırasında göster */}
                 {isAnalyzing && (
                   <Animated.View style={styles.loadingSpinner}>
                     <Ionicons name="refresh-outline" size={20} color="white" />
                   </Animated.View>
                 )}
-                <Text style={styles.analyzeButtonText}>
-                  {isAnalyzing ? 'Analiz Ediliyor...' : 'Analiz Et'}
+                {/* Buton metni - duruma göre değişir */}
+                <Text style={styles.wideAnalyzeButtonText}>
+                  {isAnalyzing ? 'Analiz Ediliyor...' : isAnalyzed ? 'Analiz Edildi' : 'Analiz Et'}
                 </Text>
               </LinearGradient>
             </TouchableOpacity>
           )}
 
+          {/* Analiz sonucu bölümü - sadece sonuç varsa göster */}
           {analysisResult && (
             <Animated.View style={[styles.resultContainer, { opacity: fadeAnim }]}>
               <LinearGradient
                 colors={['#ffffff', '#f8f9fa']}
                 style={styles.resultGradient}
               >
+                {/* Sonuç başlığı */}
                 <View style={styles.resultHeader}>
                   <Ionicons name="analytics-outline" size={24} color="#495057" />
                   <Text style={styles.resultTitle}>Analiz Sonucu</Text>
                 </View>
                 
+                {/* Sonuç içeriği */}
                 <View style={styles.resultContent}>
+                  {/* Tahmin sonucu */}
                   <View style={styles.resultItem}>
                     <Text style={styles.resultLabel}>Tahmin:</Text>
                     <View style={[
                       styles.predictionBadge,
-                      analysisResult.prediction === 'Gerçek' ? styles.realBadge : styles.fakeBadge
+                      (analysisResult.prediction === 'Gerçek' || analysisResult.prediction === 'Gercek' || analysisResult.prediction === 'Real') ? styles.realBadge : styles.fakeBadge
                     ]}>
                       <Text style={[
                         styles.resultValue,
-                        analysisResult.prediction === 'Gerçek' ? styles.real : styles.fake
+                        (analysisResult.prediction === 'Gerçek' || analysisResult.prediction === 'Gercek' || analysisResult.prediction === 'Real') ? styles.real : styles.fake
                       ]}>
                         {analysisResult.prediction || 'Bilinmiyor'}
                       </Text>
                     </View>
                   </View>
                   
+                  {/* Güven oranı */}
                   <View style={styles.resultItem}>
-                    <Text style={styles.resultLabel}>Güven Oranı:</Text>
+                    <Text style={styles.resultLabel}>
+                      {(analysisResult.prediction === 'Gerçek' || analysisResult.prediction === 'Gercek' || analysisResult.prediction === 'Real') ? 'Gerçek Olma Oranı:' : 'Sahte Olma Oranı:'}
+                    </Text>
                     <Text style={styles.confidenceValue}>%{analysisResult.confidence || 0}</Text>
                   </View>
                   
+                  {/* Güven oranı bar grafiği */}
                   <View style={styles.confidenceBar}>
-                    <View style={[styles.confidenceFill, { width: (analysisResult.confidence || 0) + '%' }]} />
+                    <View style={[
+                      styles.confidenceFill, 
+                      { 
+                        width: (analysisResult.confidence || 0) + '%',
+                        backgroundColor: (analysisResult.prediction === 'Gerçek' || analysisResult.prediction === 'Gercek' || analysisResult.prediction === 'Real') ? '#28a745' : '#dc3545'
+                      }
+                    ]} />
                   </View>
 
+                  {/* Detaylı olasılıklar - varsa göster */}
                   {analysisResult.probabilities && (
                     <View style={styles.probabilitiesContainer}>
                       <Text style={styles.probabilitiesTitle}>Detaylı Olasılıklar:</Text>
@@ -252,6 +264,7 @@ export default function AnalysisScreen() {
                     </View>
                   )}
 
+                  {/* Kullanılan model bilgisi - varsa göster */}
                   {analysisResult.modelUsed && (
                     <View style={styles.modelUsedContainer}>
                       <Text style={styles.modelUsedText}>
@@ -269,266 +282,353 @@ export default function AnalysisScreen() {
   );
 }
 
+// Stil tanımlamaları - bileşenin görünümünü belirler
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    flex: 1, // Tüm ekranı kapla
   },
   safeArea: {
-    flex: 1,
+    flex: 1, // Tüm alanı kullan
   },
   scrollContent: {
-    padding: 20,
-    paddingBottom: 40,
+    padding: 20,        // İç boşluk
+    paddingBottom: 40,  // Alt boşluk
   },
   header: {
-    alignItems: 'center',
-    marginBottom: 30,
+    alignItems: 'center', // Ortala
+    marginBottom: 30,     // Alt boşluk
   },
   title: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    color: 'white',
-    marginBottom: 8,
+    fontSize: 32,           // Büyük font
+    fontWeight: 'bold',     // Kalın
+    textAlign: 'center',    // Ortala
+    color: 'white',         // Beyaz renk
+    marginBottom: 8,        // Alt boşluk
   },
   subtitle: {
-    fontSize: 16,
-    textAlign: 'center',
-    color: 'rgba(255,255,255,0.8)',
-    fontWeight: '500',
+    fontSize: 16,                      // Orta font
+    textAlign: 'center',               // Ortala
+    color: 'rgba(255,255,255,0.8)',   // Yarı saydam beyaz
+    fontWeight: '500',                 // Orta kalınlık
   },
 
+  // Görsel bölümü stilleri
   imageSection: {
-    alignItems: 'center',
-    marginBottom: 30,
+    alignItems: 'center',  // Ortala
+    marginBottom: 30,      // Alt boşluk
   },
   imageWrapper: {
-    position: 'relative',
-    borderRadius: 20,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 20,
-    elevation: 15,
+    position: 'relative',           // Overlay için
+    borderRadius: 20,               // Yuvarlatılmış köşeler
+    overflow: 'hidden',             // Taşan kısımları gizle
+    shadowColor: '#000',            // Gölge rengi
+    shadowOffset: { width: 0, height: 8 }, // Gölge pozisyonu
+    shadowOpacity: 0.3,             // Gölge saydamlığı
+    shadowRadius: 20,               // Gölge yayılımı
+    elevation: 15,                  // Android gölge
   },
   selectedImage: {
-    width: width - 60,
-    height: width - 60,
-    borderRadius: 20,
-    resizeMode: 'cover',
+    width: width - 60,    // Ekran genişliği - 60px
+    height: width - 60,   // Kare görsel
+    borderRadius: 20,     // Yuvarlatılmış köşeler
+    resizeMode: 'cover',  // Görseli sığdır
   },
   imageOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.1)',
-    borderRadius: 20,
+    position: 'absolute',              // Görsel üzerine yerleştir
+    top: 0, left: 0, right: 0, bottom: 0, // Tüm alanı kapla
+    backgroundColor: 'rgba(0,0,0,0.1)', // Hafif koyu overlay
+    borderRadius: 20,                   // Yuvarlatılmış köşeler
   },
   placeholderContainer: {
-    width: width - 60,
-    height: width - 60,
-    borderRadius: 20,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    elevation: 5,
+    width: width - 60,                      // Görsel ile aynı boyut
+    height: width - 60,                     // Kare
+    borderRadius: 20,                       // Yuvarlatılmış köşeler
+    overflow: 'hidden',                     // Taşan kısımları gizle
+    shadowColor: '#000',                    // Gölge
+    shadowOffset: { width: 0, height: 4 }, // Gölge pozisyonu
+    shadowOpacity: 0.1,                     // Hafif gölge
+    shadowRadius: 10,                       // Gölge yayılımı
+    elevation: 5,                           // Android gölge
   },
   placeholderGradient: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
+    flex: 1,                  // Tüm alanı kapla
+    justifyContent: 'center', // Dikey ortala
+    alignItems: 'center',     // Yatay ortala
+    padding: 20,              // İç boşluk
   },
   placeholderText: {
-    marginTop: 15,
-    fontSize: 18,
-    color: '#495057',
-    fontWeight: '600',
-    textAlign: 'center',
+    marginTop: 15,        // Üst boşluk
+    fontSize: 18,         // Büyük font
+    color: '#495057',     // Koyu gri
+    fontWeight: '600',    // Orta kalın
+    textAlign: 'center',  // Ortala
   },
   placeholderSubtext: {
-    marginTop: 5,
-    fontSize: 14,
-    color: '#6c757d',
-    textAlign: 'center',
-  },
-  buttonSection: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 25,
-  },
-  actionButton: {
-    flex: 0.48,
-    borderRadius: 15,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 8,
-  },
-  buttonGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 18,
-    paddingHorizontal: 20,
-  },
-  buttonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '700',
-    marginLeft: 10,
-  },
-  analyzeButton: {
-    marginBottom: 25,
-    borderRadius: 15,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 15,
-    elevation: 10,
-  },
-  analyzeButtonDisabled: {
-    opacity: 0.7,
-  },
-  analyzeGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 20,
-    paddingHorizontal: 30,
-  },
-  loadingSpinner: {
-    marginRight: 10,
-  },
-  analyzeButtonText: {
-    color: 'white',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  resultContainer: {
-    borderRadius: 20,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 20,
-    elevation: 12,
-  },
-  resultGradient: {
-    padding: 25,
-  },
-  resultHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  resultTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#495057',
-    marginLeft: 10,
-  },
-  resultContent: {
-    // gap özelliği yerine marginBottom kullanıyoruz
-  },
-  resultItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 15,
-  },
-  resultLabel: {
-    fontSize: 16,
-    color: '#6c757d',
-    fontWeight: '500',
-  },
-  predictionBadge: {
-    paddingHorizontal: 15,
-    paddingVertical: 8,
-    borderRadius: 20,
-  },
-  realBadge: {
-    backgroundColor: '#d4edda',
-  },
-  fakeBadge: {
-    backgroundColor: '#f8d7da',
-  },
-  resultValue: {
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  real: {
-    color: '#155724',
-  },
-  fake: {
-    color: '#721c24',
-  },
-  confidenceValue: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#495057',
-  },
-  confidenceBar: {
-    height: 8,
-    backgroundColor: '#e9ecef',
-    borderRadius: 4,
-    overflow: 'hidden',
-    marginTop: 5,
-    marginBottom: 15,
-  },
-  confidenceFill: {
-    height: '100%',
-    backgroundColor: '#4facfe',
-    borderRadius: 4,
-  },
-  probabilitiesContainer: {
-    marginTop: 15,
-    marginBottom: 15,
-    padding: 15,
-    backgroundColor: 'rgba(102, 126, 234, 0.1)',
-    borderRadius: 12,
-  },
-  probabilitiesTitle: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#495057',
-    marginBottom: 10,
-  },
-  probabilityItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 5,
-  },
-  probabilityLabel: {
-    fontSize: 13,
-    color: '#6c757d',
-  },
-  probabilityValue: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#495057',
-  },
-  modelUsedContainer: {
-    marginTop: 15,
-    marginBottom: 15,
-    padding: 12,
-    backgroundColor: 'rgba(248, 249, 250, 0.8)',
-    borderRadius: 10,
-    borderLeftWidth: 3,
-    borderLeftColor: '#4facfe',
-  },
-  modelUsedText: {
-    fontSize: 12,
-    color: '#495057',
-    fontWeight: '500',
+    marginTop: 5,         // Üst boşluk
+    fontSize: 14,         // Küçük font
+    color: '#6c757d',     // Açık gri
+    textAlign: 'center',  // Ortala
   },
 
+  // Buton bölümü stilleri
+  buttonSection: {
+    flexDirection: 'row',        // Yatay dizilim
+    justifyContent: 'space-between', // Aralarında boşluk
+    marginBottom: 25,            // Alt boşluk
+  },
+  actionButton: {
+    flex: 0.48,                         // %48 genişlik (ikisi yan yana)
+    borderRadius: 15,                   // Yuvarlatılmış köşeler
+    overflow: 'hidden',                 // Taşan kısımları gizle
+    shadowColor: '#000',                // Gölge
+    shadowOffset: { width: 0, height: 4 }, // Gölge pozisyonu
+    shadowOpacity: 0.3,                 // Gölge saydamlığı
+    shadowRadius: 10,                   // Gölge yayılımı
+    elevation: 8,                       // Android gölge
+  },
+  buttonGradient: {
+    flexDirection: 'row',       // İkon ve metin yan yana
+    alignItems: 'center',       // Dikey ortala
+    justifyContent: 'center',   // Yatay ortala
+    paddingVertical: 18,        // Dikey padding
+    paddingHorizontal: 20,      // Yatay padding
+  },
+  buttonText: {
+    color: 'white',       // Beyaz metin
+    fontSize: 16,         // Orta font
+    fontWeight: '700',    // Kalın
+    marginLeft: 10,       // İkondan boşluk
+  },
+
+  // Analiz butonu stilleri
+  analyzeButton: {
+    marginBottom: 25,                   // Alt boşluk
+    borderRadius: 15,                   // Yuvarlatılmış köşeler
+    overflow: 'hidden',                 // Taşan kısımları gizle
+    shadowColor: '#000',                // Gölge
+    shadowOffset: { width: 0, height: 6 }, // Gölge pozisyonu
+    shadowOpacity: 0.3,                 // Gölge saydamlığı
+    shadowRadius: 15,                   // Gölge yayılımı
+    elevation: 10,                      // Android gölge
+  },
+  analyzeButtonDisabled: {
+    opacity: 0.7, // Disabled durumda saydam
+  },
+  analyzeGradient: {
+    flexDirection: 'row',       // Yatay dizilim
+    alignItems: 'center',       // Dikey ortala
+    justifyContent: 'center',   // Yatay ortala
+    paddingVertical: 20,        // Dikey padding
+    paddingHorizontal: 30,      // Yatay padding
+  },
+  loadingSpinner: {
+    marginRight: 10, // Metinden boşluk
+  },
+  analyzeButtonText: {
+    color: 'white',       // Beyaz metin
+    fontSize: 18,         // Büyük font
+    fontWeight: 'bold',   // Kalın
+  },
+
+  // Sonuç bölümü stilleri
+  resultContainer: {
+    borderRadius: 20,                   // Yuvarlatılmış köşeler
+    overflow: 'hidden',                 // Taşan kısımları gizle
+    shadowColor: '#000',                // Gölge
+    shadowOffset: { width: 0, height: 8 }, // Gölge pozisyonu
+    shadowOpacity: 0.15,                // Hafif gölge
+    shadowRadius: 20,                   // Gölge yayılımı
+    elevation: 12,                      // Android gölge
+  },
+  resultGradient: {
+    padding: 25, // İç boşluk
+  },
+  resultHeader: {
+    flexDirection: 'row',   // İkon ve metin yan yana
+    alignItems: 'center',   // Dikey ortala
+    marginBottom: 20,       // Alt boşluk
+  },
+  resultTitle: {
+    fontSize: 22,         // Büyük font
+    fontWeight: 'bold',   // Kalın
+    color: '#495057',     // Koyu gri
+    marginLeft: 10,       // İkondan boşluk
+  },
+  resultContent: {
+    // İçerik alanı - özel stil yok
+  },
+  resultItem: {
+    flexDirection: 'row',        // Yatay dizilim
+    justifyContent: 'space-between', // Aralarında boşluk
+    alignItems: 'center',        // Dikey ortala
+    marginBottom: 15,            // Alt boşluk
+  },
+  resultLabel: {
+    fontSize: 16,         // Orta font
+    color: '#6c757d',     // Açık gri
+    fontWeight: '500',    // Orta kalın
+  },
+  predictionBadge: {
+    paddingHorizontal: 15, // Yatay padding
+    paddingVertical: 8,    // Dikey padding
+    borderRadius: 20,      // Yuvarlatılmış köşeler
+  },
+  realBadge: {
+    backgroundColor: '#d4edda', // Açık yeşil arka plan
+  },
+  fakeBadge: {
+    backgroundColor: '#f8d7da', // Açık kırmızı arka plan
+  },
+  resultValue: {
+    fontSize: 16,         // Orta font
+    fontWeight: 'bold',   // Kalın
+  },
+  real: {
+    color: '#155724', // Koyu yeşil metin
+  },
+  fake: {
+    color: '#721c24', // Koyu kırmızı metin
+  },
+  confidenceValue: {
+    fontSize: 18,         // Büyük font
+    fontWeight: 'bold',   // Kalın
+    color: '#495057',     // Koyu gri
+  },
+
+  // Güven oranı bar grafiği
+  confidenceBar: {
+    height: 8,                // Bar yüksekliği
+    backgroundColor: '#e9ecef', // Arka plan rengi
+    borderRadius: 4,          // Yuvarlatılmış köşeler
+    overflow: 'hidden',       // Taşan kısımları gizle
+    marginTop: 5,             // Üst boşluk
+    marginBottom: 15,         // Alt boşluk
+  },
+  confidenceFill: {
+    height: '100%',           // Tam yükseklik
+    backgroundColor: '#4facfe', // Mavi dolgu
+    borderRadius: 4,          // Yuvarlatılmış köşeler
+  },
+
+  // Detaylı olasılıklar bölümü
+  probabilitiesContainer: {
+    marginTop: 15,                          // Üst boşluk
+    marginBottom: 15,                       // Alt boşluk
+    padding: 15,                            // İç boşluk
+    backgroundColor: 'rgba(102, 126, 234, 0.1)', // Hafif mavi arka plan
+    borderRadius: 12,                       // Yuvarlatılmış köşeler
+  },
+  probabilitiesTitle: {
+    fontSize: 14,         // Küçük font
+    fontWeight: 'bold',   // Kalın
+    color: '#495057',     // Koyu gri
+    marginBottom: 10,     // Alt boşluk
+  },
+  probabilityItem: {
+    flexDirection: 'row',        // Yatay dizilim
+    justifyContent: 'space-between', // Aralarında boşluk
+    marginBottom: 5,             // Alt boşluk
+  },
+  probabilityLabel: {
+    fontSize: 13,     // Küçük font
+    color: '#6c757d', // Açık gri
+  },
+  probabilityValue: {
+    fontSize: 13,         // Küçük font
+    fontWeight: '600',    // Orta kalın
+    color: '#495057',     // Koyu gri
+  },
+
+  // Model bilgisi bölümü
+  modelUsedContainer: {
+    marginTop: 15,                      // Üst boşluk
+    marginBottom: 15,                   // Alt boşluk
+    padding: 12,                        // İç boşluk
+    backgroundColor: 'rgba(248, 249, 250, 0.8)', // Hafif gri arka plan
+    borderRadius: 10,                   // Yuvarlatılmış köşeler
+    borderLeftWidth: 3,                 // Sol kenarlık
+    borderLeftColor: '#4facfe',         // Mavi kenarlık
+  },
+  modelUsedText: {
+    fontSize: 12,         // Küçük font
+    color: '#495057',     // Koyu gri
+    fontWeight: '500',    // Orta kalın
+  },
+
+  // Placeholder buton stilleri
+  placeholderButton: {
+    marginTop: 20,                    // Üst boşluk
+    borderRadius: 25,                 // Yuvarlatılmış köşeler
+    overflow: 'hidden',               // Taşan kısımları gizle
+    shadowColor: '#000',              // Gölge rengi
+    shadowOffset: { width: 0, height: 4 }, // Gölge pozisyonu
+    shadowOpacity: 0.15,              // Gölge saydamlığı
+    shadowRadius: 8,                  // Gölge yayılımı
+    elevation: 6,                     // Android gölge
+  },
+  placeholderButtonGradient: {
+    flexDirection: 'row',             // Yatay dizilim
+    alignItems: 'center',             // Dikey ortala
+    justifyContent: 'center',         // Yatay ortala
+    paddingHorizontal: 30,            // Yatay padding
+    paddingVertical: 15,              // Dikey padding
+  },
+  placeholderButtonText: {
+    color: 'white',                   // Beyaz metin
+    fontSize: 16,                     // Orta font
+    fontWeight: '600',                // Orta kalın
+    marginLeft: 8,                    // İkon ile metin arası boşluk
+  },
+
+  // Geniş buton stilleri
+  wideActionButton: {
+    marginTop: 20,                    // Üst boşluk
+    marginHorizontal: 20,             // Yatay boşluk
+    borderRadius: 15,                 // Yuvarlatılmış köşeler
+    overflow: 'hidden',               // Taşan kısımları gizle
+    shadowColor: '#000',              // Gölge rengi
+    shadowOffset: { width: 0, height: 4 }, // Gölge pozisyonu
+    shadowOpacity: 0.2,               // Gölge saydamlığı
+    shadowRadius: 10,                 // Gölge yayılımı
+    elevation: 8,                     // Android gölge
+  },
+  wideButtonGradient: {
+    flexDirection: 'row',             // Yatay dizilim
+    alignItems: 'center',             // Dikey ortala
+    justifyContent: 'center',         // Yatay ortala
+    paddingHorizontal: 40,            // Yatay padding
+    paddingVertical: 18,              // Dikey padding
+  },
+  wideButtonText: {
+    color: 'white',                   // Beyaz metin
+    fontSize: 18,                     // Büyük font
+    fontWeight: '600',                // Orta kalın
+    marginLeft: 10,                   // İkon ile metin arası boşluk
+  },
+
+  // Geniş analiz buton stilleri
+  wideAnalyzeButton: {
+    marginTop: 15,                    // Üst boşluk
+    marginBottom: 25,                 // Alt boşluk - sonuç kartı ile arasında boşluk
+    marginHorizontal: 20,             // Yatay boşluk
+    borderRadius: 15,                 // Yuvarlatılmış köşeler
+    overflow: 'hidden',               // Taşan kısımları gizle
+    shadowColor: '#000',              // Gölge rengi
+    shadowOffset: { width: 0, height: 4 }, // Gölge pozisyonu
+    shadowOpacity: 0.2,               // Gölge saydamlığı
+    shadowRadius: 10,                 // Gölge yayılımı
+    elevation: 8,                     // Android gölge
+  },
+  wideAnalyzeGradient: {
+    flexDirection: 'row',             // Yatay dizilim
+    alignItems: 'center',             // Dikey ortala
+    justifyContent: 'center',         // Yatay ortala
+    paddingHorizontal: 40,            // Yatay padding
+    paddingVertical: 18,              // Dikey padding
+  },
+  wideAnalyzeButtonText: {
+    color: 'white',                   // Beyaz metin
+    fontSize: 18,                     // Büyük font
+    fontWeight: '600',                // Orta kalın
+  },
 }); 
