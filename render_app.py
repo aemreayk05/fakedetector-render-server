@@ -20,7 +20,7 @@ def load_model():
     global model, processor
     try:
         print("🔄 Model yükleniyor...")
-        model = AutoImageProcessor.from_pretrained("haywoodsloan/ai-image-detector-deploy")
+        model = AutoModelForImageClassification.from_pretrained("haywoodsloan/ai-image-detector-deploy")
         processor = AutoImageProcessor.from_pretrained("haywoodsloan/ai-image-detector-deploy")
         print("✅ Model başarıyla yüklendi!")
         return True
