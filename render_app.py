@@ -20,8 +20,10 @@ def load_model():
     global model, processor
     try:
         print("🔄 Model yükleniyor...")
-        model = AutoModelForImageClassification.from_pretrained("haywoodsloan/ai-image-detector-deploy")
-        processor = AutoImageProcessor.from_pretrained("haywoodsloan/ai-image-detector-deploy")
+        # Daha basit model yükleme
+        from transformers import pipeline
+        model = pipeline("image-classification", model="haywoodsloan/ai-image-detector-deploy")
+        processor = None  # Pipeline kendi processor'ını kullanır
         print("✅ Model başarıyla yüklendi!")
         return True
     except Exception as e:
@@ -57,7 +59,7 @@ def analyze_image():
     
     try:
         # Model yüklü değilse yükle
-        if model is None or processor is None:
+        if model is None:
             if not load_model():
                 return jsonify({"error": "Model yüklenemedi"}), 500
         
@@ -73,21 +75,32 @@ def analyze_image():
         image_bytes = base64.b64decode(image_data)
         image = Image.open(io.BytesIO(image_bytes)).convert('RGB')
         
-        # Görseli işle
-        inputs = processor(image, return_tensors="pt")
-        
-        # Tahmin yap
-        with torch.no_grad():
-            outputs = model(**inputs)
-            probabilities = torch.nn.functional.softmax(outputs.logits, dim=-1)
+        # Pipeline ile tahmin yap
+        results = model(image)
         
         # Sonuçları parse et
-        real_prob = probabilities[0][1].item() * 100
-        fake_prob = probabilities[0][0].item() * 100
-        
-        # Tahmin belirle
-        prediction = "Gerçek" if real_prob > fake_prob else "Sahte"
-        confidence = max(real_prob, fake_prob)
+        if len(results) >= 2:
+            # İlk iki sonucu al
+            result1 = results[0]
+            result2 = results[1]
+            
+            # Label'ları kontrol et
+            if 'FAKE' in result1['label'].upper():
+                fake_prob = result1['score'] * 100
+                real_prob = result2['score'] * 100
+            else:
+                real_prob = result1['score'] * 100
+                fake_prob = result2['score'] * 100
+            
+            # Tahmin belirle
+            prediction = "Gerçek" if real_prob > fake_prob else "Sahte"
+            confidence = max(real_prob, fake_prob)
+        else:
+            # Fallback
+            prediction = "Bilinmiyor"
+            confidence = 0
+            real_prob = 0
+            fake_prob = 0
         
         # Sonucu döndür
         result = {
