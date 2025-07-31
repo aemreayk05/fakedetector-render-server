@@ -1,4 +1,5 @@
 import sightengineConfig from '../config/sightengine.js';
+import * as FileSystem from 'expo-file-system';
 
 class SightengineService {
   constructor() {
@@ -88,9 +89,6 @@ class SightengineService {
 
       console.log('🔍 Sightengine API - FileSystem ile analiz başlıyor...');
 
-      // Expo FileSystem'i import et
-      const FileSystem = require('expo-file-system');
-      
       // Base64'ü temizle (data:image/jpeg;base64, prefix'ini kaldır)
       const cleanBase64 = base64Image.replace(/^data:image\/[a-z]+;base64,/, '');
       

@@ -13,14 +13,17 @@ import {
   SafeAreaView,   // Güvenli alan (notch vs. için)
   Dimensions,     // Ekran boyutları
   Animated,       // Animasyon bileşeni
+  StatusBar,      // Status bar kontrolü
+  Platform,       // Platform bilgisini için
 } from 'react-native';
 
 // Expo kütüphanelerini içe aktarma
 import * as ImagePicker from 'expo-image-picker';  // Galeri ve kamera erişimi
 import { Ionicons } from '@expo/vector-icons';     // İkon seti
 import { LinearGradient } from 'expo-linear-gradient'; // Gradyan arka plan
+import { useFonts, Poppins_700Bold } from '@expo-google-fonts/poppins';
 
-// Özel servis dosyası - AI model analizi için
+// Özel servis dosyaları - AI model analizi için
 import ModelService from '../services/ModelService';
 
 // Ekran boyutlarını al (responsive tasarım için)
@@ -35,6 +38,16 @@ export default function AnalysisScreen() {
   const [isAnalyzed, setIsAnalyzed] = useState(false);          // Görsel analiz edildi mi?
   const [fadeAnim] = useState(new Animated.Value(0));          // Soluklaşma animasyonu için
   const [scaleAnim] = useState(new Animated.Value(0.8));       // Büyütme animasyonu için
+  const [spinAnim] = useState(new Animated.Value(0));          // Döndürme animasyonu için
+  const [pulseAnim] = useState(new Animated.Value(1));         // Nabız animasyonu için
+  const [progressAnim] = useState(new Animated.Value(0));      // Progress bar animasyonu için
+  const [typingAnim] = useState(new Animated.Value(0));        // Yazma animasyonu için
+  const [progressText, setProgressText] = useState('AI analizi başlatılıyor');
+
+  // Font yükleme - her zaman çağrılmalı
+  const [fontsLoaded] = useFonts({
+    Poppins_700Bold,
+  });
 
   // useEffect: Bileşen ilk yüklendiğinde çalışır
   useEffect(() => {
@@ -53,48 +66,103 @@ export default function AnalysisScreen() {
         useNativeDriver: true,
       }),
     ]).start(); // Animasyonları başlat
-  }, []); // Boş dependency array = sadece ilk render'da çalış
+  }, []);
+
+  // Analiz animasyonları
+  useEffect(() => {
+    if (isAnalyzing) {
+      // Spinner animasyonu - sürekli döner
+      Animated.loop(
+        Animated.timing(spinAnim, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: true,
+        })
+      ).start();
+
+      // Pulse animasyonu - nabız gibi büyüyüp küçülür
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 1.2,
+            duration: 600,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 600,
+            useNativeDriver: true,
+          }),
+        ])
+      ).start();
+
+      // Progress bar animasyonu
+      Animated.timing(progressAnim, {
+        toValue: 1,
+        duration: 3000, // 3 saniye
+        useNativeDriver: false,
+      }).start();
+
+      // Typing animasyonu ve progress text güncelleme
+      const progressSteps = [
+        'AI analizi başlatılıyor',
+        'Görsel işleniyor',
+        'Model yükleniyor',
+        'Analiz yapılıyor',
+        'Sonuç hazırlanıyor'
+      ];
+      
+      progressSteps.forEach((text, index) => {
+        setTimeout(() => {
+          setProgressText(text);
+        }, index * 600); // Her 600ms'de bir güncelle
+      });
+
+      Animated.timing(typingAnim, {
+        toValue: 1,
+        duration: 3000,
+        useNativeDriver: false,
+      }).start();
+    } else {
+      // Analiz bittiğinde animasyonları durdur
+      spinAnim.setValue(0);
+      pulseAnim.setValue(1);
+      progressAnim.setValue(0);
+      typingAnim.setValue(0);
+      setProgressText('AI analizi başlatılıyor'); // Reset progress text
+    }
+  }, [isAnalyzing]);
 
   // Galeriden görsel seçme fonksiyonu
   const pickImageFromGallery = async () => {
     try {
-      // Galeri erişim izni kontrolü
-      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      // Galeri erişim izni iste
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       
-      // İzin verilmemişse uyarı göster ve çık
-      if (permissionResult.granted === false) {
-        Alert.alert(
-          'İzin Gerekli',                                    // Başlık
-          'Galeriye erişim için izin vermeniz gerekiyor.',   // Mesaj
-          [{ text: 'Tamam' }]                               // Butonlar
-        );
+      if (status !== 'granted') {
+        Alert.alert('İzin Gerekli', 'Galeri erişimi için izin gereklidir.');
         return;
       }
 
-      // Galeri açma - en basit konfigürasyon
+      // Galeriden görsel seç
       const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images, // Sadece görseller
+        allowsEditing: false, // Düzenleme kapalı
+        aspect: [4, 3], // Görsel oranı
         quality: 1, // En yüksek kalite
       });
 
-      // Sonuç kontrolü - eski ImagePicker formatı için
-      if (!result.cancelled && result.uri) {
-        setSelectedImage({ uri: result.uri }); // Seçilen görseli state'e kaydet
-        setAnalysisResult(null);                // Önceki analiz sonucunu temizle
-        setIsAnalyzed(false);                   // Yeni görsel seçildi, analiz edilmedi
-      } 
-      // Yeni ImagePicker formatı için (assets array)
-      else if (!result.canceled && result.assets && result.assets.length > 0) {
-        setSelectedImage(result.assets[0]);     // İlk asset'i al
-        setAnalysisResult(null);                // Önceki analiz sonucunu temizle
-        setIsAnalyzed(false);                   // Yeni görsel seçildi, analiz edilmedi
+      // Görsel seçildiyse state'e kaydet
+      if (!result.canceled && result.assets && result.assets[0]) {
+        setSelectedImage(result.assets[0]);
+        setAnalysisResult(null); // Önceki sonucu temizle
+        setIsAnalyzed(false); // Analiz durumunu sıfırla
       }
     } catch (error) {
-      // Hata durumunda kullanıcıya bilgi ver
-      Alert.alert('Hata', 'Galeri açılırken bir hata oluştu.');
+      Alert.alert('Hata', 'Görsel seçilirken bir hata oluştu.');
+      console.error(error);
     }
   };
-
-
 
   // Seçilen görseli analiz etme fonksiyonu
   const analyzeImage = async () => {
@@ -108,8 +176,9 @@ export default function AnalysisScreen() {
     setIsAnalyzing(true);
     
     try {
-      // ModelService ile görseli analiz et
+      console.log(' Görsel analizi başlıyor...');
       const result = await ModelService.analyzeImage(selectedImage.uri);
+      
       setAnalysisResult(result); // Sonucu state'e kaydet
       setIsAnalyzed(true);       // Analiz tamamlandı
     } catch (error) {
@@ -122,6 +191,23 @@ export default function AnalysisScreen() {
     }
   };
 
+  // Font yüklenene kadar loading göster
+  if (!fontsLoaded) {
+    return (
+      <LinearGradient
+        colors={['#667eea', '#764ba2']}
+        style={styles.container}
+      >
+        <StatusBar hidden={true} />
+        <SafeAreaView style={styles.safeArea}>
+          <View style={styles.loadingContainer}>
+            <Text style={styles.loadingText}>Yükleniyor...</Text>
+          </View>
+        </SafeAreaView>
+      </LinearGradient>
+    );
+  }
+
   // UI render fonksiyonu
   return (
     // Ana container - gradyan arka plan
@@ -129,16 +215,24 @@ export default function AnalysisScreen() {
       colors={['#667eea', '#764ba2']} // Mavi-mor gradyan
       style={styles.container}
     >
-      {/* Güvenli alan wrapper */}
-      <SafeAreaView style={styles.safeArea}>
-        {/* Kaydırılabilir içerik alanı */}
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          
-          {/* Başlık bölümü - animasyonlu */}
-          <Animated.View style={[styles.header, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}>
-            <Text style={styles.title}>Görsel Analizi</Text>
-            <Text style={styles.subtitle}>Görselin gerçeklik durumunu analiz edin</Text>
+      {/* Status bar'ı gizle */}
+      <StatusBar hidden={true} />
+              {/* Güvenli alan wrapper */}
+        <SafeAreaView style={styles.safeArea}>
+          {/* Buton Stili AppBar */}
+          <Animated.View style={[styles.appBar, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}>
+            <LinearGradient
+              colors={['#ffffff', '#f8f9fa']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.appBarGradient}
+            >
+              <Text style={styles.appBarTitle}>Görsel Analizi</Text>
+            </LinearGradient>
           </Animated.View>
+
+          {/* Kaydırılabilir içerik alanı */}
+          <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           
           {/* Görsel gösterme bölümü */}
           <View style={styles.imageSection}>
@@ -165,14 +259,16 @@ export default function AnalysisScreen() {
 
           {/* Galeriden seç butonu - geniş tasarım */}
           <TouchableOpacity style={styles.wideActionButton} onPress={pickImageFromGallery}>
-            <LinearGradient
+              <LinearGradient
               colors={['#4facfe', '#00f2fe']}
               style={styles.wideButtonGradient}
-            >
-              <Ionicons name="images-outline" size={24} color="white" />
+              >
+                <Ionicons name="images-outline" size={24} color="white" />
               <Text style={styles.wideButtonText}>Galeriden Seç</Text>
-            </LinearGradient>
-          </TouchableOpacity>
+              </LinearGradient>
+            </TouchableOpacity>
+
+
 
           {/* Analiz butonu - sadece görsel seçilmişse göster */}
           {selectedImage && (
@@ -182,21 +278,54 @@ export default function AnalysisScreen() {
               disabled={isAnalyzing || isAnalyzed} // Analiz sırasında veya tamamlandığında disable et
             >
               <LinearGradient
-                colors={isAnalyzing ? ['#adb5bd', '#6c757d'] : ['#28a745', '#20c997']}
+                colors={isAnalyzing ? ['#ff6b6b', '#ee5a24'] : ['#28a745', '#20c997']}
                 style={styles.wideAnalyzeGradient}
               >
-                {/* Loading spinner - sadece analiz sırasında göster */}
+                {/* Animasyonlu loading spinner */}
                 {isAnalyzing && (
-                  <Animated.View style={styles.loadingSpinner}>
-                    <Ionicons name="refresh-outline" size={20} color="white" />
+                  <Animated.View style={[
+                    styles.loadingSpinner,
+                    {
+                      transform: [{
+                        rotate: spinAnim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: ['0deg', '360deg']
+                        })
+                      }]
+                    }
+                  ]}>
+                    <Ionicons name="sync-outline" size={24} color="white" />
                   </Animated.View>
                 )}
-                {/* Buton metni - duruma göre değişir */}
+                
+                {/* Buton metni */}
                 <Text style={styles.wideAnalyzeButtonText}>
                   {isAnalyzing ? 'Analiz Ediliyor...' : isAnalyzed ? 'Analiz Edildi' : 'Analiz Et'}
                 </Text>
               </LinearGradient>
             </TouchableOpacity>
+          )}
+
+          {/* Progress Bar - sadece analiz sırasında göster */}
+          {isAnalyzing && (
+            <Animated.View style={styles.progressContainer}>
+              <View style={styles.progressBar}>
+                <Animated.View 
+                  style={[
+                    styles.progressFill,
+                    {
+                      width: progressAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: ['0%', '100%']
+                      })
+                    }
+                  ]} 
+                />
+              </View>
+              <Animated.Text style={styles.progressText}>
+                {progressText}
+              </Animated.Text>
+            </Animated.View>
           )}
 
           {/* Analiz sonucu bölümü - sadece sonuç varsa göster */}
@@ -294,22 +423,21 @@ const styles = StyleSheet.create({
     padding: 20,        // İç boşluk
     paddingBottom: 40,  // Alt boşluk
   },
-  header: {
-    alignItems: 'center', // Ortala
-    marginBottom: 30,     // Alt boşluk
+  // Buton Stili AppBar stilleri
+  appBar: {
+    marginBottom: 20,
   },
-  title: {
-    fontSize: 32,           // Büyük font
-    fontWeight: 'bold',     // Kalın
-    textAlign: 'center',    // Ortala
-    color: 'white',         // Beyaz renk
-    marginBottom: 8,        // Alt boşluk
+  appBarGradient: {
+    paddingVertical: 18,
+    paddingHorizontal: 30,
+    alignItems: 'center',
   },
-  subtitle: {
-    fontSize: 16,                      // Orta font
-    textAlign: 'center',               // Ortala
-    color: 'rgba(255,255,255,0.8)',   // Yarı saydam beyaz
-    fontWeight: '500',                 // Orta kalınlık
+  appBarTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#495057',
+    fontFamily: 'Poppins_700Bold',
+    letterSpacing: -0.5,
   },
 
   // Görsel bölümü stilleri
@@ -423,6 +551,33 @@ const styles = StyleSheet.create({
   },
   loadingSpinner: {
     marginRight: 10, // Metinden boşluk
+    transform: [{ rotate: '0deg' }], // Başlangıç rotasyonu
+  },
+  
+  // Progress bar stilleri
+  progressContainer: {
+    marginTop: 20,
+    marginBottom: 20,
+    alignItems: 'center',
+  },
+  progressBar: {
+    width: '100%',
+    height: 6,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 3,
+    overflow: 'hidden',
+    marginBottom: 10,
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: '#4facfe',
+    borderRadius: 3,
+  },
+  progressText: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.9)',
+    fontWeight: '500',
+    textAlign: 'center',
   },
   analyzeButtonText: {
     color: 'white',       // Beyaz metin
@@ -619,6 +774,9 @@ const styles = StyleSheet.create({
     shadowRadius: 10,                 // Gölge yayılımı
     elevation: 8,                     // Android gölge
   },
+  analyzeButtonDisabled: {
+    opacity: 0.6,                     // Disabled durumda saydamlık
+  },
   wideAnalyzeGradient: {
     flexDirection: 'row',             // Yatay dizilim
     alignItems: 'center',             // Dikey ortala
@@ -626,9 +784,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: 40,            // Yatay padding
     paddingVertical: 18,              // Dikey padding
   },
+
+
   wideAnalyzeButtonText: {
     color: 'white',                   // Beyaz metin
     fontSize: 18,                     // Büyük font
     fontWeight: '600',                // Orta kalın
+  },
+
+  // Loading stilleri
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    fontSize: 18,
+    color: 'white',
+    fontWeight: '600',
   },
 }); 

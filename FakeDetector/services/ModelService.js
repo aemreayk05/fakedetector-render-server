@@ -1,5 +1,7 @@
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import SightengineService from './SightengineService.js';
+import DatabaseService from './DatabaseService.js';
 
 // ========================================
 // 🔥 DUAL MODEL SERVICE
@@ -16,11 +18,11 @@ class ModelService {
   constructor() {
     console.log('🚀 ModelService başlatılıyor - Dual Model Ready');
     this.sightengineService = SightengineService;
-    this.currentMode = ANALYSIS_MODES.SIGHTENGINE; // Varsayılan
+    this.currentMode = ANALYSIS_MODES.HAYWOODSLOAN; // Varsayılan
     this.haywoodsloanServerUrl = null;
     
-    // Render sunucu URL'si (deploy tamamlandıktan sonra güncellenecek)
-    this.RENDER_SERVER_URL = "https://fakedetector-haywoodsloan.onrender.com";
+    // Render sunucu URL'si
+    this.RENDER_SERVER_URL = "https://fakedetector-server.onrender.com";
   }
 
   // ===== MAIN ANALYSIS METHOD =====
@@ -48,8 +50,26 @@ class ModelService {
         ...result,
         analysisMode: this.currentMode,
         totalProcessingTime: totalTime,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        imageUri: imageUri // Görsel URI'sini ekle
       };
+
+      // 4. SQL sunucusuna kaydet (sadece autoSaveResults açıksa)
+      try {
+        // AsyncStorage'dan autoSaveResults değerini al
+        const autoSaveEnabled = await AsyncStorage.getItem('autoSaveResults');
+        const shouldSave = autoSaveEnabled !== 'false'; // Default true, sadece 'false' ise kaydetme
+        
+        if (shouldSave) {
+        await DatabaseService.saveAnalysisResult(formattedResult);
+        console.log('💾 Analiz sonucu SQL sunucusuna kaydedildi');
+        } else {
+          console.log('ℹ️ Otomatik kaydetme kapalı - analiz sonucu kaydedilmedi');
+        }
+      } catch (dbError) {
+        console.warn('⚠️ SQL sunucusuna kaydetme başarısız:', dbError.message);
+        // Analiz başarılı ama kaydetme başarısız - kullanıcıya analiz sonucunu göster
+      }
 
       console.log('✅ Analiz tamamlandı:', formattedResult.prediction, `(${formattedResult.confidence}%)`);
       return formattedResult;
@@ -95,6 +115,8 @@ class ModelService {
     }
 
     try {
+      console.log(` Sunucuya gönderiliyor: ${serverUrl}/analyze`);
+      
       const response = await fetch(`${serverUrl}/analyze`, {
         method: 'POST',
         headers: {
@@ -105,18 +127,22 @@ class ModelService {
         })
       });
 
+      console.log(`📥 Response status: ${response.status}`);
+
       if (!response.ok) {
-        throw new Error(`Server hatası: ${response.status}`);
+        const errorText = await response.text();
+        console.error('❌ Server error response:', errorText);
+        throw new Error(`Server hatası: ${response.status} - ${errorText}`);
       }
 
       const result = await response.json();
-      
-      if (!result.success) {
-        throw new Error(result.error || 'Server analiz hatası');
-      }
+      console.log('✅ Server response:', result);
 
+      // ✅ DÜZELTİLDİ: success kontrolü kaldırıldı
+      // Sunucudan gelen response'u doğrudan kullan
+      
       // Doğru confidence değerini hesapla
-      let correctConfidence = result.confidence;
+      let correctConfidence = result.confidence || 0;
       
       // Eğer prediction "Gerçek" ise, gerçek olma oranını al
       if ((result.prediction === 'Gerçek' || result.prediction === 'Gercek') && result.probabilities) {
@@ -127,18 +153,21 @@ class ModelService {
         correctConfidence = result.probabilities.fake;
       }
 
-      // Haywoodsloan sonucunu formatla
+      // Haywoodsloan sonucunu formatla - sunucu response'unu doğrudan kullan
       return {
-        success: true,
+        success: true, // Manuel olarak true yap
         prediction: result.prediction,
-        prediction_en: result.prediction_en,
+        prediction_en: result.prediction === 'Gerçek' ? 'Real' : 'Fake',
         confidence: correctConfidence,
-        raw_score: result.raw_score,
-        processing_time: result.processing_time,
-        model_used: result.model_used,
-        model_author: result.model_author,
-        probabilities: result.probabilities,
-        model_info: result.model_info
+        raw_score: result.confidence / 100, // 0-1 arası
+        processing_time: result.processing_time || 0,
+        model_used: result.model_used || 'haywoodsloan/ai-image-detector-deploy',
+        model_author: 'haywoodsloan',
+        probabilities: result.probabilities || {
+          real: result.prediction === 'Gerçek' ? result.confidence : 100 - result.confidence,
+          fake: result.prediction === 'Sahte' ? result.confidence : 100 - result.confidence
+        },
+        model_info: result.model_info || 'SwinV2-based AI vs Real detection'
       };
 
     } catch (error) {
@@ -152,13 +181,13 @@ class ModelService {
     try {
       console.log('📸 Görsel işleniyor - Orijinal kalite korunuyor...');
       
-      // Sightengine için: Resize YOK, compress YOK, %100 kalite
+      // ✅ RESIZE YOK - Orijinal boyut korunuyor
       const manipulatedImage = await manipulateAsync(
         imageUri,
         [], // Resize yok - orijinal boyut
         { 
           format: SaveFormat.JPEG, 
-          compress: 1.0,  // %100 kalite
+          compress: 1.0,  // ✅ %100 kalite - Sıkıştırma yok
           base64: true 
         }
       );
@@ -197,7 +226,7 @@ class ModelService {
       const response = await fetch(`${serverUrl}/health`);
       if (response.ok) {
         const data = await response.json();
-        return { 
+        return {
           status: 'healthy', 
           mode: 'haywoodsloan',
           model: data.model_name,
@@ -237,16 +266,19 @@ class ModelService {
   }
 
   getModeDescription() {
-    if (this.currentMode === ANALYSIS_MODES.SIGHTENGINE) {
-      return 'Sightengine Professional API - Yüksek doğruluk, ticari kullanım';
-    } else if (this.currentMode === ANALYSIS_MODES.HAYWOODSLOAN) {
-      return 'Haywoodsloan SwinV2 Model - Open-source, güçlü AI detection';
+    switch (this.currentMode) {
+              case ANALYSIS_MODES.SIGHTENGINE:
+          return '🔥 Pro - Sightengine Professional API';
+        case ANALYSIS_MODES.HAYWOODSLOAN:
+          return '🤖 Standart - Haywoodsloan SwinV2 Model';
+      default:
+        return '❌ Bilinmeyen analiz modu';
     }
-    return 'Bilinmeyen mod';
   }
 
   setAnalysisMode(mode) {
-    if (mode === ANALYSIS_MODES.SIGHTENGINE || mode === ANALYSIS_MODES.HAYWOODSLOAN) {
+    if (mode === ANALYSIS_MODES.SIGHTENGINE || 
+        mode === ANALYSIS_MODES.HAYWOODSLOAN) {
       this.currentMode = mode;
       console.log(`✅ Analiz modu değiştirildi: ${mode}`);
       return true;
@@ -260,14 +292,15 @@ class ModelService {
     console.log(`✅ Haywoodsloan server URL ayarlandı: ${url}`);
   }
   
-  setDemoMode(enabled) { 
+  setDemoMode(enabled) {
     console.log('⚠️ Demo mode devre dışı - sadece Sightengine kullanılıyor'); 
   }
-  
+
   async getServicesStatus() {
     return {
       sightengine: { available: true, status: 'ready' },
-      current_mode: 'sightengine'
+      haywoodsloan: { available: true, status: 'ready' },
+      current_mode: this.currentMode
     };
   }
 }

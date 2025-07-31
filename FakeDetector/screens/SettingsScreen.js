@@ -12,15 +12,18 @@ import {
   SafeAreaView,     // Güvenli alan (notch vs. için)
   Alert,            // Uyarı popup'ları için
   Dimensions,       // Ekran boyutları
-  TextInput,        // Metin girişi için
+  StatusBar,        // Status bar kontrolü
 } from 'react-native';
 
 // Expo kütüphanelerini içe aktarma
 import { Ionicons } from '@expo/vector-icons';          // İkon seti
 import { LinearGradient } from 'expo-linear-gradient';  // Gradyan arka plan
+import { useFonts, Poppins_700Bold } from '@expo-google-fonts/poppins';
 
 // Servisler
 import ModelService from '../services/ModelService';
+import DatabaseService from '../services/DatabaseService.js';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Ekran genişliğini al (responsive tasarım için)
 const { width } = Dimensions.get('window');
@@ -28,21 +31,35 @@ const { width } = Dimensions.get('window');
 // Ana bileşen fonksiyonu
 export default function SettingsScreen() {
   // State tanımlamaları - Ayar değerlerini yönetir
-  const [notificationsEnabled, setNotificationsEnabled] = useState(true);  // Bildirimler açık/kapalı
   const [autoSaveResults, setAutoSaveResults] = useState(true);             // Otomatik kaydetme açık/kapalı
-  const [darkMode, setDarkMode] = useState(false);                          // Karanlık mod açık/kapalı
   
   // Analiz modu state'leri
-  const [currentAnalysisMode, setCurrentAnalysisMode] = useState('sightengine');
-  const [haywoodsloanServerUrl, setHaywoodsloanServerUrl] = useState('');
-  const [showUrlInput, setShowUrlInput] = useState(false);
+  const [currentAnalysisMode, setCurrentAnalysisMode] = useState('haywoodsloan');
   const [serverHealth, setServerHealth] = useState({ status: 'unknown' });
+
+  // Font yükleme - her zaman çağrılmalı
+  const [fontsLoaded] = useFonts({
+    Poppins_700Bold,
+  });
 
   // Component mount - analiz modu ve server durumu yükle
   useEffect(() => {
     loadCurrentMode();
     loadServerHealth();
+    loadAutoSaveSetting();
   }, []);
+
+  // AsyncStorage'dan autoSave ayarını yükle
+  const loadAutoSaveSetting = async () => {
+    try {
+      const savedValue = await AsyncStorage.getItem('autoSaveResults');
+      if (savedValue !== null) {
+        setAutoSaveResults(savedValue === 'true');
+      }
+    } catch (error) {
+      console.error('❌ AutoSave ayarı yükleme hatası:', error);
+    }
+  };
 
   // Mevcut analiz modunu yükle
   const loadCurrentMode = () => {
@@ -70,9 +87,15 @@ export default function SettingsScreen() {
         { 
           text: 'Sil',                                                     // Silme butonu
           style: 'destructive',                                            // Kırmızı renkte göster
-          onPress: () => {
-            // Gerçek uygulamada burada veritabanından veri silinir
+          onPress: async () => {
+            try {
+              // SQL sunucusundan geçmişi temizle
+              await DatabaseService.clearHistory();
             Alert.alert('Başarılı', 'Analiz geçmişi temizlendi.');
+            } catch (error) {
+              console.error('❌ Geçmiş temizleme hatası:', error);
+              Alert.alert('Hata', 'Geçmiş temizlenirken bir hata oluştu.');
+            }
           }
         }
       ]
@@ -83,7 +106,7 @@ export default function SettingsScreen() {
   const handleAbout = () => {
     Alert.alert(
       'Hakkında',                                                          // Başlık
-      'FakeDetector v2.0.0\n\nBu uygulama, görsel içeriklerin gerçeklik durumunu analiz etmek için geliştirilmiştir.\n\n🔥 Sightengine Professional API\n⚡ Yüksek doğruluklu AI detection\n🚀 Production ready\n✨ Tek tıkla çalışır\n\nGeliştirici: AEA\nTarih: 2025', // İçerik
+      'FakeDetector v2.0.0\n\nBu uygulama, görsel içeriklerin gerçeklik durumunu analiz etmek için geliştirilmiştir.\n\n🤖 Haywoodsloan SwinV2 Model\n⚡ Yüksek doğruluklu AI detection\n🚀 Production ready\n✨ Tek tıkla çalışır\n\nGeliştirici: AEA\nTarih: 2025', // İçerik
       [{ text: 'Tamam' }]                                                  // Tamam butonu
     );
   };
@@ -92,50 +115,43 @@ export default function SettingsScreen() {
   const handlePrivacyPolicy = () => {
     Alert.alert(
       'Gizlilik Politikası',                                               // Başlık
-      'Bu uygulama, analiz edilen görselleri yalnızca analiz sürecinde kullanır. Verileriniz güvende.\n\n🔒 Sightengine Professional API\n• Görsel sadece analiz için gönderilir\n• HTTPS ile güvenli iletim\n• Veriler saklanmaz\n• Üçüncü taraflarla paylaşılmaz\n\n✅ GDPR uyumlu', // İçerik
+      'FakeDetector Gizlilik Politikası\n\n📸 Analiz Görselleri:\n• Analiz için yüklenen fotoğraflar\n• 30 gün saklanır, sonra otomatik silinir\n• Sadece AI analizi için kullanılır\n\n🔒 Veri Güvenliği:\n• HTTPS şifreleme ile güvenli iletim\n• Üçüncü taraf servislerle sınırlı paylaşım\n• GDPR ve KVKK uyumlu\n\n📊 Toplanan Veriler:\n• Cihaz bilgileri (1 yıl saklanır)\n• Kullanım istatistikleri (2 yıl saklanır)\n• Anonim kullanıcı ID\'si\n\n🗑️ Kullanıcı Hakları:\n• Verilerinizi görme, düzeltme, silme\n• İşleme kısıtlama ve itiraz\n• Veri taşınabilirliği\n\n📧 İletişim: a.emreaykut@gmail.com\n\n✅ KVKK ve GDPR Uyumlu', // İçerik
       [{ text: 'Tamam' }]                                                  // Tamam butonu
     );
   };
 
   // Analiz modu değiştirme
   const handleChangeAnalysisMode = (mode) => {
-    if (ModelService.setAnalysisMode(mode)) {
+    if (mode === 'sightengine' || mode === 'haywoodsloan') {
+      ModelService.setAnalysisMode(mode);
       setCurrentAnalysisMode(mode);
       loadServerHealth(); // Server durumunu güncelle
-      Alert.alert('Başarılı', `Analiz modu ${mode === 'sightengine' ? 'Sightengine' : 'Haywoodsloan'} olarak değiştirildi.`);
-    }
-  };
-
-  // Haywoodsloan server URL ayarlama
-  const handleHaywoodsloanUrlSetting = () => {
-    setShowUrlInput(true);
-  };
-
-  const handleSaveHaywoodsloanUrl = () => {
-    if (haywoodsloanServerUrl.trim()) {
-      ModelService.setHaywoodsloanServerUrl(haywoodsloanServerUrl.trim());
-      setShowUrlInput(false);
-      loadServerHealth(); // Server durumunu güncelle
-      Alert.alert('Başarılı', 'Haywoodsloan server URL kaydedildi.');
-    } else {
-      Alert.alert('Hata', 'Geçerli bir URL girin.');
+      Alert.alert('Başarılı', `Analiz modu ${mode === 'sightengine' ? 'Pro' : 'Standart'} olarak değiştirildi.`);
     }
   };
 
   // Analiz modu bilgisi
   const handleAnalysisInfo = () => {
-    const modeInfo = currentAnalysisMode === 'sightengine' 
-      ? '🔥 Sightengine Professional API\n• Yüksek doğruluk\n• Ticari kullanım\n• Hızlı analiz'
-      : '🤖 Haywoodsloan SwinV2 Model\n• Open-source\n• Güçlü AI detection\n• 781MB model';
+    let modeInfo;
+    let modeName;
+    
+    if (currentAnalysisMode === 'sightengine') {
+      modeName = 'Pro';
+      modeInfo = '🔥 Sightengine Professional API\n• Yüksek doğruluk\n• Ticari kullanım\n• Hızlı analiz\n• Premium servis';
+    } else if (currentAnalysisMode === 'haywoodsloan') {
+      modeName = 'Standart';
+      modeInfo = '🤖 Haywoodsloan SwinV2 Model\n• Open-source\n• Güçlü AI detection\n• 781MB model\n• Render sunucu\n• Ücretsiz kullanım';
+    } else {
+      modeName = 'Bilinmeyen';
+      modeInfo = '❌ Bilinmeyen analiz modu';
+    }
     
     Alert.alert(
       'Analiz Modu',
-      `✅ ${currentAnalysisMode === 'sightengine' ? 'Sightengine' : 'Haywoodsloan'} aktif\n\n${modeInfo}`,
+      `✅ ${modeName} aktif\n\n${modeInfo}`,
       [{ text: 'Tamam' }]
     );
   };
-
-  // Sadeleştirildi - helper fonksiyonlar gereksiz
 
   // Yeniden kullanılabilir ayar öğesi bileşeni
   const SettingItem = ({ icon, title, subtitle, onPress, rightComponent }) => (
@@ -163,6 +179,23 @@ export default function SettingsScreen() {
     </TouchableOpacity>
   );
 
+  // Font yüklenene kadar loading göster
+  if (!fontsLoaded) {
+    return (
+      <LinearGradient
+        colors={['#667eea', '#764ba2']}
+        style={styles.container}
+      >
+        <StatusBar hidden={true} />
+        <SafeAreaView style={styles.safeArea}>
+          <View style={styles.loadingContainer}>
+            <Text style={styles.loadingText}>Yükleniyor...</Text>
+          </View>
+        </SafeAreaView>
+      </LinearGradient>
+    );
+  }
+
   // UI render fonksiyonu
   return (
     // Ana container - gradyan arka plan
@@ -170,16 +203,24 @@ export default function SettingsScreen() {
       colors={['#667eea', '#764ba2']} // Mavi-mor gradyan
       style={styles.container}
     >
+      {/* Status bar'ı gizle */}
+      <StatusBar hidden={true} />
       {/* Güvenli alan wrapper */}
       <SafeAreaView style={styles.safeArea}>
         {/* Kaydırılabilir içerik alanı */}
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           
-          {/* Başlık bölümü */}
-          <View style={styles.header}>
-            <Text style={styles.title}>Ayarlar</Text>
-            <Text style={styles.subtitle}>Uygulama tercihlerinizi yönetin</Text>
-          </View>
+                      {/* Buton Stili AppBar */}
+            <View style={styles.appBar}>
+              <LinearGradient
+                colors={['#ffffff', '#f8f9fa']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.appBarGradient}
+              >
+                <Text style={styles.appBarTitle}>Ayarlar</Text>
+              </LinearGradient>
+            </View>
 
           {/* Analiz Modları bölümü */}
           <View style={styles.section}>
@@ -189,15 +230,15 @@ export default function SettingsScreen() {
             <SettingItem
               icon="analytics-outline" 
               title="Analiz Modu"
-              subtitle={`${currentAnalysisMode === 'sightengine' ? '🔥 Sightengine' : '🤖 Haywoodsloan'} ${serverHealth.status === 'healthy' ? '✅ Ready' : '❌ Error'}`}
+              subtitle={`${currentAnalysisMode === 'sightengine' ? '🔥 Pro' : '🤖 Standart'} ${serverHealth.status === 'healthy' ? '✅ Ready' : '❌ Error'}`}
               onPress={handleAnalysisInfo}
             />
 
             {/* Mode Seçimi */}
             <SettingItem
               icon="radio-button-on-outline"
-              title="Sightengine API"
-              subtitle="Professional AI detection - Yüksek doğruluk"
+              title="Pro"
+              subtitle="Sightengine API - Professional AI detection"
               onPress={() => handleChangeAnalysisMode('sightengine')}
               rightComponent={
                 <View style={[styles.radioButton, currentAnalysisMode === 'sightengine' && styles.radioButtonActive]}>
@@ -208,8 +249,8 @@ export default function SettingsScreen() {
 
             <SettingItem
               icon="radio-button-on-outline"
-              title="Haywoodsloan Server"
-              subtitle="SwinV2 Model - Open-source AI detection"
+              title="Standart"
+              subtitle="SwinV2 Model"
               onPress={() => handleChangeAnalysisMode('haywoodsloan')}
               rightComponent={
                 <View style={[styles.radioButton, currentAnalysisMode === 'haywoodsloan' && styles.radioButtonActive]}>
@@ -218,53 +259,13 @@ export default function SettingsScreen() {
               }
             />
 
-            {/* Haywoodsloan Server URL - sadece haywoodsloan seçiliyse göster */}
-            {currentAnalysisMode === 'haywoodsloan' && (
-              <SettingItem
-                icon="server-outline"
-                title="Server URL"
-                subtitle={haywoodsloanServerUrl || "Server URL ayarlanmamış"}
-                onPress={handleHaywoodsloanUrlSetting}
-              />
-            )}
 
-            {/* URL Input - koşullu göster */}
-            {showUrlInput && (
-              <View style={styles.inputContainer}>
-                <TextInput
-                  style={styles.textInput}
-                  placeholder="https://your-ngrok-url.ngrok.io"
-                  value={haywoodsloanServerUrl}
-                  onChangeText={setHaywoodsloanServerUrl}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
-                <TouchableOpacity style={styles.saveButton} onPress={handleSaveHaywoodsloanUrl}>
-                  <Text style={styles.saveButtonText}>Kaydet</Text>
-                </TouchableOpacity>
-              </View>
-            )}
 
           </View>
 
           {/* Genel ayarlar bölümü */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Genel</Text>
-            
-            {/* Bildirimler ayarı */}
-            <SettingItem
-              icon="notifications-outline"
-              title="Bildirimler"
-              subtitle="Analiz sonuçları için bildirim al"
-              rightComponent={
-                <Switch
-                  value={notificationsEnabled}                            // Mevcut durum
-                  onValueChange={setNotificationsEnabled}                 // Değişiklik fonksiyonu
-                  trackColor={{ false: '#ccc', true: '#007AFF' }}        // Track renkleri
-                  thumbColor="#fff"                                       // Thumb rengi
-                />
-              }
-            />
 
             {/* Otomatik kaydetme ayarı */}
             <SettingItem
@@ -274,30 +275,21 @@ export default function SettingsScreen() {
               rightComponent={
                 <Switch
                   value={autoSaveResults}
-                  onValueChange={setAutoSaveResults}
-                  trackColor={{ false: '#ccc', true: '#007AFF' }}
-                  thumbColor="#fff"
-                />
-              }
-            />
-
-            {/* Karanlık mod ayarı */}
-            <SettingItem
-              icon="moon-outline"
-              title="Karanlık Mod"
-              subtitle="Koyu tema kullan"
-              rightComponent={
-                <Switch
-                  value={darkMode}
-                  onValueChange={setDarkMode}
+                  onValueChange={async (value) => {
+                    setAutoSaveResults(value);
+                    try {
+                      await AsyncStorage.setItem('autoSaveResults', value.toString());
+                      console.log('✅ AutoSave ayarı kaydedildi:', value);
+                    } catch (error) {
+                      console.error('❌ AutoSave ayarı kaydetme hatası:', error);
+                    }
+                  }}
                   trackColor={{ false: '#ccc', true: '#007AFF' }}
                   thumbColor="#fff"
                 />
               }
             />
           </View>
-
-
 
           {/* Veri yönetimi bölümü */}
           <View style={styles.section}>
@@ -349,7 +341,7 @@ export default function SettingsScreen() {
             >
               <Text style={styles.footerText}>FakeDetector v2.0.0</Text>
               <Text style={styles.footerSubtext}>© 2024 Tüm hakları saklıdır</Text>
-              <Text style={styles.footerSubtext}>🔥 Sightengine API destekli</Text>
+              <Text style={styles.footerSubtext}>🤖 Standart Model - Haywoodsloan SwinV2</Text>
             </LinearGradient>
           </View>
         </ScrollView>
@@ -369,23 +361,21 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingBottom: 30, // Alt boşluk
   },
-  header: {
-    alignItems: 'center',     // Ortala
-    paddingVertical: 20,      // Dikey padding
-    paddingHorizontal: 20,    // Yatay padding
+  // Buton Stili AppBar stilleri
+  appBar: {
+    marginBottom: 20,
   },
-  title: {
-    fontSize: 28,             // Büyük font
-    fontWeight: 'bold',       // Kalın
-    textAlign: 'center',      // Ortala
-    color: 'white',           // Beyaz renk
-    marginBottom: 8,          // Alt boşluk
+  appBarGradient: {
+    paddingVertical: 18,
+    paddingHorizontal: 30,
+    alignItems: 'center',
   },
-  subtitle: {
-    fontSize: 16,                      // Orta font
-    textAlign: 'center',               // Ortala
-    color: 'rgba(255,255,255,0.8)',   // Yarı saydam beyaz
-    fontWeight: '500',                 // Orta kalınlık
+  appBarTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#495057',
+    fontFamily: 'Poppins_700Bold',
+    letterSpacing: -0.5,
   },
 
   // Bölüm stilleri
@@ -477,134 +467,6 @@ const styles = StyleSheet.create({
     marginTop: 5,     // Üst boşluk
   },
 
-  // URL Input stilleri
-  urlInputContainer: {
-    marginTop: 10,
-    marginHorizontal: 20,
-    borderRadius: 15,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  urlInputGradient: {
-    padding: 20,
-  },
-  urlInput: {
-    backgroundColor: '#f8f9fa',
-    borderRadius: 10,
-    paddingHorizontal: 15,
-    paddingVertical: 12,
-    fontSize: 14,
-    color: '#495057',
-    marginBottom: 15,
-    borderWidth: 1,
-    borderColor: '#e9ecef',
-  },
-  urlInputButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  urlSaveButton: {
-    backgroundColor: '#007AFF',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 8,
-    flex: 0.45,
-    alignItems: 'center',
-  },
-  urlSaveText: {
-    color: 'white',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  urlCancelButton: {
-    backgroundColor: '#6c757d',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 8,
-    flex: 0.45,
-    alignItems: 'center',
-  },
-  urlCancelText: {
-    color: 'white',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-
-  // Sightengine Config Input stilleri
-  configInputContainer: {
-    marginTop: 10,
-    marginHorizontal: 20,
-    borderRadius: 15,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  configInputGradient: {
-    padding: 20,
-  },
-  configTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#495057',
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  configDescription: {
-    fontSize: 13,
-    color: '#6c757d',
-    textAlign: 'center',
-    marginBottom: 15,
-  },
-  configInput: {
-    backgroundColor: '#f8f9fa',
-    borderRadius: 10,
-    paddingHorizontal: 15,
-    paddingVertical: 12,
-    fontSize: 14,
-    color: '#495057',
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: '#e9ecef',
-  },
-  configButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 10,
-  },
-  configSaveButton: {
-    backgroundColor: '#28a745',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 8,
-    flex: 0.6,
-    alignItems: 'center',
-  },
-  configSaveText: {
-    color: 'white',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  configCancelButton: {
-    backgroundColor: '#6c757d',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 8,
-    flex: 0.35,
-    alignItems: 'center',
-  },
-  configCancelText: {
-    color: 'white',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-
   // Radio button stilleri
   radioButton: {
     width: 20,
@@ -625,37 +487,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#007AFF',
   },
 
-  // Input container stilleri
-  inputContainer: {
-    marginTop: 10,
-    marginHorizontal: 20,
-    padding: 15,
-    backgroundColor: '#f8f9fa',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#e9ecef',
-  },
-  textInput: {
-    backgroundColor: 'white',
-    borderRadius: 8,
-    paddingHorizontal: 15,
-    paddingVertical: 12,
-    fontSize: 14,
-    color: '#495057',
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: '#e9ecef',
-  },
-  saveButton: {
-    backgroundColor: '#007AFF',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 8,
+  // Loading stilleri
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  saveButtonText: {
+  loadingText: {
+    fontSize: 18,
     color: 'white',
-    fontSize: 14,
     fontWeight: '600',
   },
 }); 

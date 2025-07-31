@@ -1,7 +1,10 @@
 // HistoryScreen: Kullanıcının geçmişte analiz ettiği görselleri ve sonuçlarını listeler, kullanıcıdan doğruluk geri bildirimi alır.
 
+// HistoryScreen: Kullanıcının geçmişte analiz ettiği görselleri ve sonuçlarını listeler, kullanıcıdan doğruluk geri bildirimi alır.
+
 // React ve React Native bileşenlerini içe aktarma
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   View,             // Temel container bileşeni
   Text,             // Metin gösterme bileşeni
@@ -13,83 +16,70 @@ import {
   RefreshControl,   // Aşağı çekerek yenileme
   Dimensions,       // Ekran boyutları
   Animated,         // Animasyon bileşeni
+  StatusBar,        // Status bar kontrolü
+  Platform,         // Platform bilgisini almak için
 } from 'react-native';
 
 // Expo kütüphanelerini içe aktarma
 import { Ionicons } from '@expo/vector-icons';          // İkon seti
 import { LinearGradient } from 'expo-linear-gradient';  // Gradyan arka plan
+import { useFonts, Poppins_700Bold } from '@expo-google-fonts/poppins';
+import DatabaseService from '../services/DatabaseService.js';
 
 // Ekran genişliğini al (responsive tasarım için)
 const { width } = Dimensions.get('window');
 
 // Ana bileşen fonksiyonu
-export default function HistoryScreen() {
+export default function HistoryScreen({ navigation }) {
   // State tanımlamaları - Bileşenin durumunu yönetir
   const [historyData, setHistoryData] = useState([]);      // Analiz geçmişi verisi
   const [refreshing, setRefreshing] = useState(false);     // Yenileme durumu
 
-  // Demo için örnek geçmiş verisi - gerçek uygulamada veritabanından gelir
-  const mockHistoryData = [
-    {
-      id: '1',                                            // Benzersiz kimlik
-      imageUri: 'https://picsum.photos/200/200?random=1', // Görsel URL'si
-      prediction: 'Gerçek',                               // Tahmin sonucu
-      confidence: 85,                                     // Güven oranı (%)
-      timestamp: '2024-01-15T10:30:00Z',                 // Analiz tarihi
-      userFeedback: null,                                 // Kullanıcı geri bildirimi
-    },
-    {
-      id: '2',
-      imageUri: 'https://picsum.photos/200/200?random=2',
-      prediction: 'Sahte',
-      confidence: 92,
-      timestamp: '2024-01-15T09:15:00Z',
-      userFeedback: 'correct',  // Kullanıcı "doğru" demiş
-    },
-    {
-      id: '3',
-      imageUri: 'https://picsum.photos/200/200?random=3',
-      prediction: 'Gerçek',
-      confidence: 78,
-      timestamp: '2024-01-14T16:45:00Z',
-      userFeedback: 'incorrect', // Kullanıcı "yanlış" demiş
-    },
-    {
-      id: '4',
-      imageUri: 'https://picsum.photos/200/200?random=4',
-      prediction: 'Sahte',
-      confidence: 89,
-      timestamp: '2024-01-14T14:20:00Z',
-      userFeedback: null, // Henüz geri bildirim yok
-    },
-    {
-      id: '5',
-      imageUri: 'https://picsum.photos/200/200?random=5',
-      prediction: 'Gerçek',
-      confidence: 73,
-      timestamp: '2024-01-13T11:10:00Z',
-      userFeedback: 'correct',
-    },
-  ];
+  // Font yükleme - her zaman çağrılmalı
+  const [fontsLoaded] = useFonts({
+    Poppins_700Bold,
+  });
+
+  // Geçmiş verisini yükleme fonksiyonu
+  const loadHistoryData = useCallback(async () => {
+    try {
+      // SQL sunucusundan veri çek
+      const data = await DatabaseService.getAnalysisHistory(50, 0);
+      setHistoryData(data);
+    } catch (error) {
+      console.error('❌ Geçmiş verisi yükleme hatası:', error);
+      // Hata durumunda boş array göster
+      setHistoryData([]);
+    }
+  }, []); // useCallback ile fonksiyonu memoize et
 
   // useEffect: Bileşen ilk yüklendiğinde çalışır
   useEffect(() => {
     loadHistoryData(); // Geçmiş verisini yükle
-  }, []); // Boş dependency array = sadece ilk render'da çalış
+  }, [loadHistoryData]); // loadHistoryData dependency olarak ekle
 
-  // Geçmiş verisini yükleme fonksiyonu
-  const loadHistoryData = () => {
-    // Gerçek uygulamada SQLite veritabanından veri çekilir
-    setHistoryData(mockHistoryData);
-  };
+  // useFocusEffect: Ekran her odaklandığında çalışır
+  useFocusEffect(
+    useCallback(() => {
+      console.log('🔄 History ekranı odaklandı - veriler yenileniyor...');
+      loadHistoryData(); // Her girişte verileri yenile
+    }, [loadHistoryData])
+  );
 
   // Aşağı çekerek yenileme fonksiyonu
-  const onRefresh = () => {
+  const onRefresh = async () => {
     setRefreshing(true);  // Yenileme durumunu aktif et
-    setTimeout(() => {
-      loadHistoryData();  // Verileri yeniden yükle
+    try {
+      console.log('🔄 Geçmiş yenileniyor...');
+      await loadHistoryData();  // Verileri yeniden yükle
+      console.log('✅ Geçmiş başarıyla yenilendi');
+    } catch (error) {
+      console.error('❌ Yenileme hatası:', error);
+      // Hata durumunda boş array göster
+      setHistoryData([]);
+    } finally {
       setRefreshing(false); // Yenileme durumunu pasif et
-    }, 1000); // 1 saniye bekle (demo için)
+    }
   };
 
   // Tarih formatlama fonksiyonu
@@ -105,13 +95,22 @@ export default function HistoryScreen() {
   };
 
   // Kullanıcı geri bildirimi işleme fonksiyonu
-  const handleUserFeedback = (itemId, feedback) => {
-    // State'i güncelle - belirli ID'li öğenin feedback'ini değiştir
+  const handleUserFeedback = async (itemId, feedback) => {
+    try {
+      // SQL sunucusuna geri bildirimi kaydet
+      await DatabaseService.saveUserFeedback(itemId, feedback);
+      console.log(`✅ Kullanıcı geri bildirimi kaydedildi: ${itemId} - ${feedback}`);
+      
+      // State'i güncelle
     setHistoryData(prevData =>
       prevData.map(item =>
         item.id === itemId ? { ...item, userFeedback: feedback } : item
       )
     );
+    } catch (error) {
+      console.error('❌ Geri bildirim kaydetme hatası:', error);
+      Alert.alert('Hata', 'Geri bildirim kaydedilemedi. Lütfen tekrar deneyin.');
+    }
   };
 
   // Her bir geçmiş kaydının render fonksiyonu
@@ -127,7 +126,7 @@ export default function HistoryScreen() {
         <View style={styles.itemContent}>
           {/* Görsel bölümü */}
           <View style={styles.imageSection}>
-            <Image source={{ uri: item.imageUri }} style={styles.historyImage} />
+            <Image source={{ uri: item.image_data || item.imageUri }} style={styles.historyImage} />
             {/* Görsel üzerine ikon overlay */}
             <View style={styles.imageOverlay}>
               <Ionicons name="image" size={16} color="white" />
@@ -227,6 +226,23 @@ export default function HistoryScreen() {
     </Animated.View>
   );
 
+  // Font yüklenene kadar loading göster
+  if (!fontsLoaded) {
+    return (
+      <LinearGradient
+        colors={['#667eea', '#764ba2']}
+        style={styles.container}
+      >
+        <StatusBar hidden={true} />
+        <SafeAreaView style={styles.safeArea}>
+          <View style={styles.loadingContainer}>
+            <Text style={styles.loadingText}>Yükleniyor...</Text>
+          </View>
+        </SafeAreaView>
+      </LinearGradient>
+    );
+  }
+
   // UI render fonksiyonu
   return (
     // Ana container - gradyan arka plan
@@ -234,13 +250,21 @@ export default function HistoryScreen() {
       colors={['#667eea', '#764ba2']} // Mavi-mor gradyan
       style={styles.container}
     >
-      {/* Güvenli alan wrapper */}
-      <SafeAreaView style={styles.safeArea}>
-        {/* Başlık bölümü */}
-        <View style={styles.header}>
-          <Text style={styles.title}>Geçmiş Analizler</Text>
-          <Text style={styles.subtitle}>Son analizlerinizi görüntüleyin</Text>
-        </View>
+      {/* Status bar'ı gizle */}
+      <StatusBar hidden={true} />
+              {/* Güvenli alan wrapper */}
+        <SafeAreaView style={styles.safeArea}>
+          {/* Buton Stili AppBar */}
+          <View style={styles.appBar}>
+            <LinearGradient
+              colors={['#ffffff', '#f8f9fa']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.appBarGradient}
+            >
+              <Text style={styles.appBarTitle}>Geçmiş Analizler</Text>
+            </LinearGradient>
+          </View>
         
         {/* İçerik bölümü - koşullu render */}
         {historyData.length === 0 ? (
@@ -250,11 +274,42 @@ export default function HistoryScreen() {
               colors={['#ffffff', '#f8f9fa']}
               style={styles.emptyGradient}
             >
-              <Ionicons name="time-outline" size={60} color="#6c757d" />
+              {/* Animasyonlu ikon container */}
+              <View style={styles.emptyIconContainer}>
+                <LinearGradient
+                  colors={['#667eea', '#764ba2']}
+                  style={styles.emptyIconGradient}
+                >
+                  <Ionicons name="analytics-outline" size={50} color="white" />
+                </LinearGradient>
+              </View>
+              
               <Text style={styles.emptyText}>Henüz analiz geçmişi yok</Text>
               <Text style={styles.emptySubtext}>
                 İlk analizinizi yapmak için Analiz sekmesini kullanın
               </Text>
+              
+              {/* Call-to-Action butonu */}
+              <TouchableOpacity 
+                style={styles.emptyActionButton}
+                onPress={() => navigation.navigate('Analysis')}
+                activeOpacity={0.8}
+              >
+                <LinearGradient
+                  colors={['#667eea', '#764ba2']}
+                  style={styles.emptyActionGradient}
+                >
+                  <Ionicons name="camera-outline" size={20} color="white" />
+                  <Text style={styles.emptyActionText}>İlk Analizi Yap</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+              
+              {/* Floating particles */}
+              <View style={styles.particlesContainer}>
+                <View style={styles.particle1} />
+                <View style={styles.particle2} />
+                <View style={styles.particle3} />
+              </View>
             </LinearGradient>
           </View>
         ) : (
@@ -269,13 +324,35 @@ export default function HistoryScreen() {
                 refreshing={refreshing}           // Yenileme durumu
                 onRefresh={onRefresh}            // Yenileme fonksiyonu
                 tintColor="white"                // iOS spinner rengi
-                colors={['#667eea']}             // Android spinner rengi
+                colors={['#667eea', '#764ba2']}  // Android spinner renkleri
+                progressBackgroundColor="rgba(255,255,255,0.1)" // Arka plan rengi
+                size="large"                     // Büyük spinner
               />
             }
             contentContainerStyle={styles.listContainer} // Liste container stili
             showsVerticalScrollIndicator={false}          // Scroll bar'ı gizle
           />
         )}
+        
+        {/* Floating Action Button - Refresh */}
+        <TouchableOpacity 
+          style={styles.fab}
+          onPress={onRefresh}
+          disabled={refreshing}
+          activeOpacity={0.8}
+        >
+          <LinearGradient
+            colors={['#667eea', '#764ba2']}
+            style={styles.fabGradient}
+          >
+            <Ionicons 
+              name={refreshing ? "sync" : "refresh"} 
+              size={24} 
+              color="white" 
+              style={refreshing ? styles.rotating : null}
+            />
+          </LinearGradient>
+        </TouchableOpacity>
       </SafeAreaView>
     </LinearGradient>
   );
@@ -289,23 +366,21 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1, // Tüm alanı kullan
   },
-  header: {
-    alignItems: 'center',     // Ortala
-    paddingVertical: 20,      // Dikey padding
-    paddingHorizontal: 20,    // Yatay padding
+  // Buton Stili AppBar stilleri
+  appBar: {
+    marginBottom: 20,
   },
-  title: {
-    fontSize: 28,             // Büyük font
-    fontWeight: 'bold',       // Kalın
-    textAlign: 'center',      // Ortala
-    color: 'white',           // Beyaz renk
-    marginBottom: 8,          // Alt boşluk
+  appBarGradient: {
+    paddingVertical: 18,
+    paddingHorizontal: 30,
+    alignItems: 'center',
   },
-  subtitle: {
-    fontSize: 16,                      // Orta font
-    textAlign: 'center',               // Ortala
-    color: 'rgba(255,255,255,0.8)',   // Yarı saydam beyaz
-    fontWeight: '500',                 // Orta kalınlık
+  appBarTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#495057',
+    fontFamily: 'Poppins_700Bold',
+    letterSpacing: -0.5,
   },
 
   // Liste container
@@ -465,8 +540,9 @@ const styles = StyleSheet.create({
     flex: 1,                            // Tüm alanı kapla
     justifyContent: 'center',           // Dikey ortala
     alignItems: 'center',               // Yatay ortala
-    paddingHorizontal: 40,              // Yatay padding
-    margin: 20,                         // Dış boşluk
+    paddingHorizontal: 20,              // Yatay padding azaltıldı
+    marginHorizontal: 20,               // Sadece yatay margin
+    marginVertical: 10,                 // Dikey margin azaltıldı
     borderRadius: 20,                   // Yuvarlatılmış köşeler
     overflow: 'hidden',                 // Taşan kısımları gizle
     shadowColor: '#000',                // Gölge
@@ -480,7 +556,7 @@ const styles = StyleSheet.create({
     width: '100%',            // Tam genişlik
     justifyContent: 'center', // Dikey ortala
     alignItems: 'center',     // Yatay ortala
-    padding: 40,              // İç boşluk
+    padding: 30,              // İç boşluk azaltıldı
   },
   emptyText: {
     fontSize: 20,         // Büyük font
@@ -495,5 +571,115 @@ const styles = StyleSheet.create({
     marginTop: 10,        // Üst boşluk
     textAlign: 'center',  // Ortala
     lineHeight: 20,       // Satır yüksekliği
+  },
+  
+  // Yeni empty state stilleri
+  emptyIconContainer: {
+    marginBottom: 20,
+    shadowColor: '#667eea',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 12,
+  },
+  emptyIconGradient: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emptyActionButton: {
+    marginTop: 30,
+    borderRadius: 25,
+    overflow: 'hidden',
+    shadowColor: '#667eea',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  emptyActionGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 15,
+    paddingHorizontal: 30,
+  },
+  emptyActionText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginLeft: 10,
+  },
+  particlesContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    pointerEvents: 'none',
+  },
+  particle1: {
+    position: 'absolute',
+    top: '20%',
+    left: '10%',
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: 'rgba(102, 126, 234, 0.3)',
+  },
+  particle2: {
+    position: 'absolute',
+    top: '60%',
+    right: '15%',
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(118, 75, 162, 0.4)',
+  },
+  particle3: {
+    position: 'absolute',
+    bottom: '30%',
+    left: '20%',
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: 'rgba(102, 126, 234, 0.2)',
+  },
+
+  // Floating Action Button stilleri
+  fab: {
+    position: 'absolute',           // Mutlak pozisyon
+    bottom: 30,                     // Alt boşluk
+    right: 20,                      // Sağ boşluk
+    zIndex: 1000,                   // En üstte göster
+  },
+  fabGradient: {
+    width: 56,                      // Sabit genişlik
+    height: 56,                     // Sabit yükseklik (kare)
+    borderRadius: 28,               // Yuvarlak (yarıçap = genişlik/2)
+    justifyContent: 'center',       // Dikey ortala
+    alignItems: 'center',           // Yatay ortala
+    shadowColor: '#000',            // Gölge rengi
+    shadowOffset: { width: 0, height: 4 }, // Gölge pozisyonu
+    shadowOpacity: 0.3,             // Gölge saydamlığı
+    shadowRadius: 8,                // Gölge yayılımı
+    elevation: 8,                   // Android gölge
+  },
+  rotating: {
+    transform: [{ rotate: '360deg' }], // Döndürme animasyonu
+  },
+
+  // Loading stilleri
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    fontSize: 18,
+    color: 'white',
+    fontWeight: '600',
   },
 }); 
